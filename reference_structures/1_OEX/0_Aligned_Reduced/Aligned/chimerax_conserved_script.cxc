@@ -1,0 +1,99 @@
+
+set bgcolor white
+open "/Users/aaronledray/Documents/GitHub/Labtools_apl/3_Protein_Cofactor_Homologous_Fingerprint/2_OEX_single_organisms/0_Aligned_Reduced/Aligned/4ub6.pdb"
+style #1 stick
+select
+hide
+show #1/A:665,161,547,165,169,170,557,560,567,568,569,570,571,189,61,332,333,588,337,87,601,603,607,608,354,357,630,634,510
+select #1/A:665
+color sel #e5462c
+select clear
+select #1/A:161
+color sel #e5462c
+select clear
+select #1/A:547
+color sel #dc143c
+select clear
+select #1/A:165
+color sel #ffd700
+select clear
+select #1/A:169
+color sel #f39714
+select clear
+select #1/A:170
+color sel #e5462c
+select clear
+select #1/A:557
+color sel #ee771e
+select clear
+select #1/A:560
+color sel #f29016
+select clear
+select #1/A:567
+color sel #f29016
+select clear
+select #1/A:568
+color sel #ea6224
+select clear
+select #1/A:569
+color sel #74066e
+select clear
+select #1/A:570
+color sel #ee771e
+select clear
+select #1/A:571
+color sel #ffd700
+select clear
+select #1/A:189
+color sel #ea6224
+select clear
+select #1/A:61
+color sel #ffd700
+select clear
+select #1/A:332
+color sel #ffd700
+select clear
+select #1/A:333
+color sel #4b0082
+select clear
+select #1/A:588
+color sel #dc143c
+select clear
+select #1/A:337
+color sel #5e0379
+select clear
+select #1/A:87
+color sel #ea6224
+select clear
+select #1/A:601
+color sel #dc143c
+select clear
+select #1/A:603
+color sel #44047f
+select clear
+select #1/A:607
+color sel #dc143c
+select clear
+select #1/A:608
+color sel #f29016
+select clear
+select #1/A:354
+color sel #f08419
+select clear
+select #1/A:357
+color sel #f39714
+select clear
+select #1/A:630
+color sel #b30e50
+select clear
+select #1/A:634
+color sel #3f067e
+select clear
+select #1/A:510
+color sel #ffd700
+select clear
+
+select #1/A:OEX
+show sel
+color sel byhetero
+select clear

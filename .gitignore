@@ -1,0 +1,7 @@
+# data
+candidate_designs/
+matches/
+
+# OS
+.DS_Store
+Thumbs.db

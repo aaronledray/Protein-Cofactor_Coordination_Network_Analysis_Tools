@@ -1,0 +1,20 @@
+
+set bgcolor white
+open "/Users/aaronledray/Documents/GitHub/Labtools_apl/3_Protein_Cofactor_Homologous_Fingerprint/2_OEX_single_organisms/0_Aligned_Reduced/Aligned/4ub6.pdb"
+hide
+show :165,169,170,557,560,567,568,570,61,87,601,607,608,357,510
+color gold :165
+color crimson :169
+color gold :170
+color gold :557
+color gold :560
+color gold :567
+color crimson :568
+color gold :570
+color gold :61
+color gold :87
+color gold :601
+color crimson :607
+color crimson :608
+color gold :357
+color gold :510
