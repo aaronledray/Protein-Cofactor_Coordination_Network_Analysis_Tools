@@ -117,15 +117,14 @@ Key flags:
 - `--mode` `Coord_Network` (default) or `Residues_of_Interest`.
 - `--interactive` prompts for missing parameters.
 
-Outputs (written to the working directory):
-- `Coord_Breakdown.csv` and `Coord_Links.csv` style tables describing cofactor, PCS, and SCS atoms.
-- Static plots: `1_static_*` PNG files.
-- Interactive Plotly: `1_template_coordination_network.html` (and ROI variant when using `Residues_of_Interest` mode).
+
+
 
 ## Template vs. query alignment
 Script: `2_Single_Template_Single_Query_Network_Comparison_v0.0.2.py`
 
-This consumes a template coordination CSV and a query structure, aligns common atoms with Kabsch, and logs RMSD.
+
+
 
 Example:
 ```bash
@@ -148,6 +147,8 @@ Use it to collapse duplicate chains before coordination analysis.
 python modules/deduplicate_chains.py 5jqr.cif
 python modules/deduplicate_chains.py ./structures --by coords --mask-res HEM,CU1 --yes
 ```
+
+
 
 Options:
 - `--by` `sequence` (default) or `coords` for exact coordinate signatures.
