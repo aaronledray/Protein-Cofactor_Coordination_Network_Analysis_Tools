@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -155,21 +156,72 @@ def read_alignment_metrics(matches_dir: Path, job_name: str) -> Tuple[Optional[f
                 line = line.strip()
                 if line.startswith("- Matched"):
                     # Format: "- Matched X/Y network atoms (Z%)."
-                    try:
-                        parts = line.split()
-                        frac = parts[2]  # "X/Y"
-                        matched_str, total_str = frac.split("/")[0:2]
-                        matched = int(matched_str)
-                        total = int(total_str)
-                        percent_str = parts[4].lstrip("(").rstrip("%).")
-                        percent = float(percent_str)
-                    except Exception:
-                        matched = matched or None
-                        total = total or None
-                        percent = percent or None
+                    m = re.search(r"Matched\s+(\d+)\s*/\s*(\d+)", line)
+                    if m:
+                        matched = int(m.group(1))
+                        total = int(m.group(2))
+                        percent = (matched / total * 100.0) if total else None
                     break
 
+    # Fallback: derive network stats from network_match.csv if summary parse failed
+    if matched is None or total is None:
+        net_path = matches_dir / job_name / f"{job_name}_network_match.csv"
+        if net_path.is_file():
+            try:
+                with net_path.open() as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                total = len(rows)
+                matched = sum(1 for r in rows if (r.get("matched_within_cutoff") or "").upper() == "Y")
+                percent = (matched / total * 100.0) if total else None
+            except Exception:
+                pass
+
     return rmsd, matched, total, percent
+
+
+def compute_job_metrics(matches_dir: Path, job_name: str) -> Dict[str, Optional[float]]:
+    """Compute rmsd and network stats directly from job outputs (no markdown parsing)."""
+    job_dir = matches_dir / job_name
+    metrics: Dict[str, Optional[float]] = {
+        "rmsd": None,
+        "matched": None,
+        "total": None,
+        "percent": None,
+    }
+
+    # RMSD from alignment_report.csv
+    report_path = job_dir / "alignment_report.csv"
+    if report_path.is_file():
+        try:
+            with report_path.open() as f:
+                for row in csv.DictReader(f):
+                    if (row.get("job_name") or "") == job_name:
+                        try:
+                            metrics["rmsd"] = float(row.get("rmsd", ""))
+                        except Exception:
+                            pass
+                        break
+        except Exception:
+            pass
+
+    # Network stats from network_match.csv
+    net_path = job_dir / f"{job_name}_network_match.csv"
+    if net_path.is_file():
+        try:
+            with net_path.open() as f:
+                reader = csv.DictReader(f)
+                rows = list(reader)
+            total = len(rows)
+            matched = sum(1 for r in rows if (r.get("matched_within_cutoff") or "").upper() == "Y")
+            percent = (matched / total * 100.0) if total else None
+            metrics["matched"] = matched
+            metrics["total"] = total
+            metrics["percent"] = percent
+        except Exception:
+            pass
+
+    return metrics
 
 
 def write_manifest(
@@ -211,6 +263,41 @@ def write_summary(summary_path: Path, rows: List[Dict[str, str]]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def backfill_summary(summary_path: Path, matches_dir: Path) -> None:
+    """
+    Ensure network and rmsd columns are populated by recomputing from job outputs.
+    This mirrors the manual fix users were running.
+    """
+    if not summary_path.is_file():
+        return
+    with summary_path.open() as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+        header = reader.fieldnames or []
+    updated_rows: List[Dict[str, str]] = []
+    for row in rows:
+        job_name = row.get("job_name", "")
+        if not job_name:
+            updated_rows.append(row)
+            continue
+        metrics = compute_job_metrics(matches_dir, job_name)
+        rmsd = metrics.get("rmsd")
+        matched = metrics.get("matched")
+        total = metrics.get("total")
+        percent = metrics.get("percent")
+        pct = percent if percent is not None else ((matched / total * 100.0) if matched is not None and total else None)
+        if matched is not None and total is not None:
+            row["network"] = f"{matched}/{total} ({pct:.1f}%)" if pct is not None else f"{matched}/{total}"
+        if rmsd is not None:
+            row["rmsd"] = f"{rmsd:.4f}"
+        updated_rows.append(row)
+
+    with summary_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(updated_rows)
 
 
 def main() -> None:
@@ -280,20 +367,25 @@ def main() -> None:
             job_name=job_name,
             match_cutoff=float(args.match_cutoff),
         )
-        rmsd, matched, total, percent = read_alignment_metrics(matches_dir, job_name) if ok else (None, None, None, None)
+        metrics = compute_job_metrics(matches_dir, job_name) if ok else {"rmsd": None, "matched": None, "total": None, "percent": None}
+        rmsd = metrics.get("rmsd")
+        matched = metrics.get("matched")
+        total = metrics.get("total")
+        percent = metrics.get("percent")
         conf = load_confidences(run_dir, seed, sample)
         iptm = conf.get("iptm")
         ptm = conf.get("ptm")
         af_ranking = conf.get("ranking_score")
         frac_dis = conf.get("fraction_disordered")
         has_clash = conf.get("has_clash")
+        pct = percent if percent is not None else ((matched / total * 100.0) if matched is not None and total else None)
         if ok:
             summary_rows.append({
                 "job_name": job_name,
                 "run_dir": str(run_dir),
                 "model_path": str(model_path),
                 "rmsd": f"{rmsd:.4f}" if rmsd is not None else "",
-                "network": f"{matched}/{total} ({percent:.1f}%)" if matched is not None and total is not None and percent is not None else "",
+                "network": f"{matched}/{total} ({pct:.1f}%)" if matched is not None and total is not None else "",
                 "iptm": f"{iptm:.4f}" if isinstance(iptm, (int, float)) else "",
                 "ptm": f"{ptm:.4f}" if isinstance(ptm, (int, float)) else "",
                 "af_ranking_score": f"{af_ranking:.4f}" if isinstance(af_ranking, (int, float)) else "",
@@ -312,7 +404,7 @@ def main() -> None:
             "rmsd": f"{rmsd:.4f}" if rmsd is not None else "",
             "network_matched": str(matched) if matched is not None else "",
             "network_total": str(total) if total is not None else "",
-            "network_percent": f"{percent:.1f}" if percent is not None else "",
+            "network_percent": f"{pct:.1f}" if pct is not None else "",
             "iptm": f"{iptm:.4f}" if isinstance(iptm, (int, float)) else "",
             "ptm": f"{ptm:.4f}" if isinstance(ptm, (int, float)) else "",
             "af_ranking_score": f"{af_ranking:.4f}" if isinstance(af_ranking, (int, float)) else "",
@@ -323,6 +415,7 @@ def main() -> None:
     write_manifest(manifest_path, manifest_rows)
     summary_path = matches_dir / f"{args.job_prefix}_batch_summary.csv"
     write_summary(summary_path, summary_rows)
+    backfill_summary(summary_path, matches_dir)
 
     total = len(manifest_rows)
     ok_count = sum(1 for r in manifest_rows if r["status"] == "ok")
