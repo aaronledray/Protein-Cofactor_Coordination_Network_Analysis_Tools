@@ -1,11 +1,14 @@
-# data
+# data:
 candidate_designs/
 matches/
+SSCNA_output/
 
-# OS
+
+# OS:
 .DS_Store
 Thumbs.db
 
+# Local:
 __pycache__/
 modules/__pycache__
 *.pyc

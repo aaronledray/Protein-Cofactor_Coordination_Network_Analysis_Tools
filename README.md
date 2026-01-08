@@ -94,11 +94,42 @@ deactivate
 ## Single-structure analysis (SSCNA)
 Script: `1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py`
 
-Example (non-interactive):
+
+
+
+
+Example 1 plastocyanin:
 ```bash
 python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
-  --template ./data/1_OEX/0_Aligned_Reduced/4ub6.pdb \
+  --template ./reference_structures/0_Plastocyanin/1ag6.cif \
+  --cofactor CU \
+  --distance 3.6 \
+  --exclude-moieties alanine_sidechain \
+  --mode Coord_Network
+```
+
+
+
+
+Example 2 OEC:
+```bash
+python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
+  --template ./reference_structures/1_OEX/0_Aligned_Reduced/4ub6.pdb \
   --cofactor OEX \
+  --distance 3.6 \
+  --combinatorial-cutoff 20.0 \
+  --exclude-moieties alanine_sidechain \
+  --mode Coord_Network
+```
+
+
+
+
+Example 3 Nitrogenase:
+```bash
+python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
+  --template ./reference_structures/2_Nitrogenase/3u7q_monomer.pdb \
+  --cofactor HCA,ICS \
   --distance 3.6 \
   --combinatorial \
   --combinatorial-cutoff 20.0 \
@@ -107,15 +138,27 @@ python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
 ```
 
 
+
+
+
+
 Key flags:
 - `--template` path to the structure (PDB/mmCIF, gz accepted).
-- `--cofactor` (and `--cofactor2` when using combinatorial mode) comma-separated residue names.
+- `--cofactor` (and `--cofactor2` when using combinatorial mode) comma-separated residue names. Note this means the LIST of cofactors as just 'cofactor' is appropriate. Cofactor 1 and cofactor 2 designation is to be used when looking for the only instance of cofactor 1 within proximity of cofactor 2, etc.
 - `--distance` cutoff for moiety interactions (Å).
 - `--expand-residues` to include full residues for PCS/SCS atoms.
 - `--combinatorial` plus `--combinatorial-cutoff` to keep cofactors near one another.
 - `--exclude-moieties` comma-separated labels to ignore (e.g., alanine_sidechain).
 - `--mode` `Coord_Network` (default) or `Residues_of_Interest`.
 - `--interactive` prompts for missing parameters.
+
+
+
+
+
+
+
+
 
 
 

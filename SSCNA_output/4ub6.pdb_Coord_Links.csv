@@ -26,10 +26,13 @@ pcs->scs,HOH,568,A,O,,TYR,161,A,OH,,2.755
 pcs->scs,HOH,568,A,O,,GLN,165,A,OE1,,2.706
 pcs->scs,HOH,608,A,O,,SER,169,A,O,,2.779
 pcs->scs,HOH,567,A,O,,SER,169,A,OG,,2.925
+pcs->scs,ASP,342,A,OD1,,LEU,343,A,N,,3.598
+pcs->scs,HOH,569,A,O,,HOH,510,A,O,,3.523
 pcs->scs,HOH,601,A,O,,HOH,547,A,O,,2.718
 pcs->scs,HOH,607,A,O,,HOH,557,A,O,,2.778
 pcs->scs,HOH,607,A,O,,HOH,560,A,O,,2.409
 pcs->scs,HOH,569,A,O,,HOH,570,A,O,,2.719
+pcs->scs,GLU,189,A,OE2,,HOH,571,A,O,,3.237
 pcs->scs,HOH,601,A,O,,HOH,588,A,O,,2.686
 pcs->scs,GLU,354,C,OE1,,HOH,630,A,O,,3.107
 pcs->scs,GLU,354,C,OE2,,HOH,665,C,O,,2.676
