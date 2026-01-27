@@ -20,7 +20,7 @@ Tools for extracting coordination networks around protein cofactors and comparin
 ## Motivation:
 
 - I got tired of manually finding interactions between proteins and their cofactors.
-- Needed a robust definition of coordination networks; literature's "seconady coordination sphere" was too vague for protein design workflows (rather for my applications, thereof)!
+- Needed a robust definition of coordination networks; literature's "secondary coordination sphere" was too vague for protein design workflows (rather for my applications, thereof)!
 
 
 

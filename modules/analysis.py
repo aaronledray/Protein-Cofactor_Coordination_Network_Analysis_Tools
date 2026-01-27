@@ -153,14 +153,43 @@ def evaluate_query_files(input_dir, template_atoms_of_interest, distance_cutoff,
 # --------------------------------------------------------------------
 #  High-level pipeline
 # --------------------------------------------------------------------
-def main_evaluation_pipeline(mode="CA_only", distance_cutoff=3.0):
-    """Run full evaluation pipeline."""
-    aligned_dir = "0_rep10_aligned/0_name_edited"
-    results = evaluate_query_files(aligned_dir, template_atoms_of_interest=[],  # TODO: pass properly
-                                   distance_cutoff=distance_cutoff, mode=mode)
+def main_evaluation_pipeline(
+    template_atoms_of_interest,
+    aligned_dir,
+    mode="CA_only",
+    distance_cutoff=3.0,
+    output_csv=None,
+):
+    """
+    Run full evaluation pipeline on query structures.
+
+    Parameters
+    ----------
+    template_atoms_of_interest : list[dict]
+        Atom dicts from the template structure to match against.
+    aligned_dir : str
+        Directory containing query PDB files.
+    mode : str
+        Evaluation mode: "CA_only" or "CA_CB_vectors".
+    distance_cutoff : float
+        Distance threshold for matching (Angstroms).
+    output_csv : str, optional
+        Path to output CSV file. If None, defaults to "evaluation_results_{mode}.csv".
+
+    Returns
+    -------
+    pd.DataFrame
+        Evaluation results for all query structures.
+    """
+    results = evaluate_query_files(
+        aligned_dir,
+        template_atoms_of_interest=template_atoms_of_interest,
+        distance_cutoff=distance_cutoff,
+        mode=mode,
+    )
     df = pd.DataFrame(results)
     print(df)
-    out_csv = f"0_evaluation_results_{mode}.csv"
+    out_csv = output_csv or f"evaluation_results_{mode}.csv"
     plot_evaluation_results(df, output_csv=out_csv, mode=mode)
     return df
 

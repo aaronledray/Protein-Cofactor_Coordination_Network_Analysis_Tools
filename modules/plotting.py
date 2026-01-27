@@ -323,13 +323,16 @@ def plot_interactive_modes_with_network(
     # Optional: links overlay (as before)
     links_csv_path: Optional[str] = "Coord_Links.csv",
     links_rows: Optional[List[Dict[str, str]]] = None,
+    return_fig: bool = False,
 ):
     """
     Interactive 3D Plotly viz with:
       • Coloring toggle: Coordination Sphere / Element
       • Backbone sticks toggle: Off (focused) / On (full residue sticks)
       • Dotted link lines for cofactor→PCS and PCS→SCS (if Coord_Links.csv present or rows provided)
-      • NEW: Hover shows Moiety for each atom
+      • Hover shows Moiety for each atom
+
+    If return_fig=True, returns the Plotly figure object instead of saving/showing.
     """
     import os, csv
     import numpy as np
@@ -566,23 +569,21 @@ def plot_interactive_modes_with_network(
                     dict(label="By Element", method="restyle", args=[{"marker.color": [element_colors]}]),
                 ],
                 direction="right", showactive=True, x=0.05, y=1.15, xanchor="left", yanchor="top",
-                bgcolor="rgba(50,50,50,0.8)", bordercolor="black", borderwidth=2, font=dict(size=16, color="white"),
+                bgcolor="rgba(248,249,250,1)", bordercolor="#dee2e6", borderwidth=1, font=dict(size=14, color="#1a1a1a"),
             ),
             dict(
                 type="buttons",
                 buttons=[
-                    dict(label="Background On", method="relayout", args=[{
+                    dict(label="Grid On", method="relayout", args=[{
                         "scene.xaxis.visible": True, "scene.yaxis.visible": True, "scene.zaxis.visible": True,
                         "scene.xaxis.showgrid": True, "scene.yaxis.showgrid": True, "scene.zaxis.showgrid": True,
-                        "scene.backgroundcolor": "rgba(240,240,240,1)",
                     }]),
-                    dict(label="Background Off", method="relayout", args=[{
+                    dict(label="Grid Off", method="relayout", args=[{
                         "scene.xaxis.visible": False, "scene.yaxis.visible": False, "scene.zaxis.visible": False,
-                        "scene.backgroundcolor": "rgba(255,255,255,1)",
                     }]),
                 ],
                 direction="right", showactive=True, x=0.05, y=1.05, xanchor="left", yanchor="top",
-                bgcolor="rgba(50,50,50,0.8)", bordercolor="black", borderwidth=2, font=dict(size=16, color="white"),
+                bgcolor="rgba(248,249,250,1)", bordercolor="#dee2e6", borderwidth=1, font=dict(size=14, color="#1a1a1a"),
             ),
             dict(
                 type="buttons",
@@ -591,13 +592,24 @@ def plot_interactive_modes_with_network(
                     dict(label="Backbone Atoms: On", method="update", args=[{"visible": _vis_backbone(on=True)}]),
                 ],
                 direction="right", showactive=True, x=0.05, y=0.95, xanchor="left", yanchor="top",
-                bgcolor="rgba(50,50,50,0.8)", bordercolor="black", borderwidth=2, font=dict(size=16, color="white"),
+                bgcolor="rgba(248,249,250,1)", bordercolor="#dee2e6", borderwidth=1, font=dict(size=14, color="#1a1a1a"),
             ),
         ],
-        title={"text": f"{cofactor_resname} in {pdb_name}", "x": 0.5, "font": {"size": 22}},
-        scene=dict(xaxis_title="X", yaxis_title="Y", zaxis_title="Z"),
+        title={"text": f"{cofactor_resname} in {pdb_name}", "x": 0.5, "font": {"size": 22, "color": "#1a1a1a"}},
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        scene=dict(
+            xaxis_title="X", yaxis_title="Y", zaxis_title="Z",
+            xaxis=dict(backgroundcolor="white", gridcolor="#e0e0e0", title_font=dict(color="#1a1a1a"), tickfont=dict(color="#1a1a1a")),
+            yaxis=dict(backgroundcolor="white", gridcolor="#e0e0e0", title_font=dict(color="#1a1a1a"), tickfont=dict(color="#1a1a1a")),
+            zaxis=dict(backgroundcolor="white", gridcolor="#e0e0e0", title_font=dict(color="#1a1a1a"), tickfont=dict(color="#1a1a1a")),
+            bgcolor="white",
+        ),
         margin=dict(l=0, r=0, t=60, b=0),
     )
+
+    if return_fig:
+        return fig
 
     fig.write_html(output_filename)
     print(f"Interactive plot saved as '{output_filename}'")

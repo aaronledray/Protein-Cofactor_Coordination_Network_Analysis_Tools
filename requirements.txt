@@ -1,0 +1,11 @@
+# Protein-Cofactor Coordination Network Analysis Tools
+# Core dependencies
+
+biopython>=1.79
+numpy>=1.21.0
+pandas>=1.3.0
+matplotlib>=3.4.0
+plotly>=5.0.0
+
+# Optional: YAML config support
+pyyaml>=6.0
