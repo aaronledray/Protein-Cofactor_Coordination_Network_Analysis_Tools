@@ -88,6 +88,33 @@ class CoordinationApiTests(unittest.TestCase):
         self.assertEqual(set(result["atoms"]["site_id"]), {"site_1"})
         self.assertIn("site_id", result["links"].columns)
 
+    def test_definition_options_are_opt_in(self):
+        with redirect_stdout(StringIO()):
+            default = analyze_structure(
+                PLASTOCYANIN,
+                "CU",
+                exclude_moieties=["alanine_sidechain"],
+            )
+            carbon = analyze_structure(
+                PLASTOCYANIN,
+                "CU",
+                exclude_moieties=["alanine_sidechain"],
+                include_carbon_seeds=True,
+            )
+            direct = analyze_structure(
+                PLASTOCYANIN,
+                "CU",
+                exclude_moieties=["alanine_sidechain"],
+                direct_coordination=True,
+            )
+
+        default_pcs = len(default["atoms"].query("shell == 'PCS'"))
+        carbon_pcs = len(carbon["atoms"].query("shell == 'PCS'"))
+        self.assertEqual(default_pcs, 5)
+        self.assertGreater(carbon_pcs, default_pcs)
+        self.assertEqual(int(default["links"]["direct_coordination"].sum()), 0)
+        self.assertEqual(int(direct["links"]["direct_coordination"].sum()), 3)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--distance", type=float, default=3.6)
     parser.add_argument("--shells", type=int, default=2)
     parser.add_argument("--per-site", action="store_true", help="Analyze each cofactor site separately")
+    parser.add_argument("--include-carbon-seeds", action="store_true")
+    parser.add_argument("--direct-coordination", action="store_true")
+    parser.add_argument("--direct-coordination-cutoff", type=float, default=2.6)
+    parser.add_argument("--cofactor-class-cutoff", action="append", default=[], help="Class-specific cutoff, e.g. metal=2.8")
     parser.add_argument("--expand-residues", action="store_true")
     parser.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
     parser.add_argument("--combinatorial", action="store_true")
@@ -31,6 +35,12 @@ def main() -> int:
     args = parse_args()
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    class_cutoffs = {}
+    for value in args.cofactor_class_cutoff:
+        if "=" not in value:
+            raise SystemExit("--cofactor-class-cutoff must use CLASS=ANGSTROMS")
+        name, cutoff = value.split("=", 1)
+        class_cutoffs[name.strip().lower()] = float(cutoff)
     result = batch_analyze(
         args.input,
         args.cofactor,
@@ -38,6 +48,10 @@ def main() -> int:
         distance_cutoff=args.distance,
         shells=args.shells,
         site_mode="per-site" if args.per_site else "union",
+        include_carbon_seeds=args.include_carbon_seeds,
+        direct_coordination=args.direct_coordination,
+        direct_coordination_cutoff=args.direct_coordination_cutoff,
+        cofactor_class_cutoffs=class_cutoffs,
         expand_residues=args.expand_residues,
         first_model_only=args.first_model,
         combinatorial=args.combinatorial,

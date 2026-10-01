@@ -19,6 +19,7 @@ from .structure_processing import (
     _shell_label,
     identify_coordination_shells,
     identify_coordination_network,
+    METAL_ION_RESNAMES,
 )
 
 
@@ -40,6 +41,8 @@ RESIDUE_COLUMNS = [
 LINK_IDENTITY_COLUMNS = [
     "src_insertion_code", "src_hetero_flag",
     "dst_insertion_code", "dst_hetero_flag",
+    "src_element", "dst_element",
+    "direct_coordination",
 ]
 LINK_COLUMNS = ["structure_id"] + COORD_LINK_COLUMNS + LINK_IDENTITY_COLUMNS
 
@@ -115,6 +118,36 @@ def _cofactor_site_groups(
     for index, key in enumerate(keys):
         grouped.setdefault(find(index), set()).add(key)
     return [grouped[root] for root in sorted(grouped)]
+
+
+def _effective_distance_cutoff(
+    cofactor_names: Sequence[str],
+    fallback: float,
+    class_cutoffs: Optional[Dict[str, float]],
+) -> float:
+    if not class_cutoffs:
+        return fallback
+    cofactor_class = (
+        "metal"
+        if cofactor_names and all(name.upper() in METAL_ION_RESNAMES for name in cofactor_names)
+        else "organic"
+    )
+    return float(class_cutoffs.get(cofactor_class, fallback))
+
+
+def _annotate_direct_coordination(
+    rows: List[Dict[str, Any]],
+    *,
+    enabled: bool,
+    cutoff: float,
+) -> None:
+    for row in rows:
+        row["direct_coordination"] = bool(
+            enabled
+            and row.get("link_type") == "cofactor->pcs"
+            and str(row.get("src_element", "")).upper() in METAL_ION_RESNAMES
+            and float(row.get("distance_A", float("inf"))) <= cutoff
+        )
 
 
 def _structure_id(path: Path) -> str:
@@ -246,6 +279,10 @@ def analyze_structure(
     first_model_only: bool = False,
     shells: int = 2,
     site_mode: str = "union",
+    include_carbon_seeds: bool = False,
+    direct_coordination: bool = False,
+    direct_coordination_cutoff: float = 2.6,
+    cofactor_class_cutoffs: Optional[Dict[str, float]] = None,
 ) -> Dict[str, pd.DataFrame]:
     """Analyze one structure without creating files or plots.
 
@@ -267,6 +304,11 @@ def analyze_structure(
     cofactor_names = _as_names(cofactor_resname)
     cofactor_names2 = _as_names(cofactor_resname2 or [])
     exclusions = list(exclude_moieties or [])
+    effective_cutoff = _effective_distance_cutoff(
+        cofactor_names,
+        distance_cutoff,
+        cofactor_class_cutoffs,
+    )
     if site_mode not in {"union", "per-site"}:
         raise ValueError("site_mode must be 'union' or 'per-site'")
     if shells < 1:
@@ -282,7 +324,7 @@ def analyze_structure(
             cofactor_atoms, shell_sets, link_rows = identify_coordination_shells(
                 structure=structure,
                 cofactor_resname=cofactor_names,
-                distance_cutoff=distance_cutoff,
+                distance_cutoff=effective_cutoff,
                 expand_residues=expand_residues,
                 combinatorial_mode=combinatorial,
                 combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
@@ -290,17 +332,18 @@ def analyze_structure(
                 exclude_moieties=exclusions,
                 output_dir=None,
                 output_prefix="",
-            write_coord_links=False,
-            include_link_identity=True,
+                write_coord_links=False,
+                include_link_identity=True,
                 first_model_only=first_model_only,
                 shells=shells,
                 cofactor_site_keys=site_keys,
+                include_carbon_seeds=include_carbon_seeds,
             )
         elif shells == 2:
             cofactor_atoms, pcs_atoms, scs_atoms = identify_coordination_network(
                 structure=structure,
                 cofactor_resname=cofactor_names,
-                distance_cutoff=distance_cutoff,
+                distance_cutoff=effective_cutoff,
                 expand_residues=expand_residues,
                 combinatorial_mode=combinatorial,
                 combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
@@ -310,6 +353,7 @@ def analyze_structure(
                 output_prefix="",
                 write_coord_links=False,
                 first_model_only=first_model_only,
+                include_carbon_seeds=include_carbon_seeds,
             )
             shell_sets = {1: pcs_atoms, 2: scs_atoms}
             link_rows = _coord_link_rows(
@@ -322,7 +366,7 @@ def analyze_structure(
             cofactor_atoms, shell_sets, link_rows = identify_coordination_shells(
                 structure=structure,
                 cofactor_resname=cofactor_names,
-                distance_cutoff=distance_cutoff,
+                distance_cutoff=effective_cutoff,
                 expand_residues=expand_residues,
                 combinatorial_mode=combinatorial,
                 combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
@@ -334,8 +378,14 @@ def analyze_structure(
                 include_link_identity=True,
                 first_model_only=first_model_only,
                 shells=shells,
+                include_carbon_seeds=include_carbon_seeds,
             )
 
+        _annotate_direct_coordination(
+            link_rows,
+            enabled=direct_coordination,
+            cutoff=direct_coordination_cutoff,
+        )
         shell_tables = [("Cofactor", cofactor_atoms)] + [
             (_shell_label(number), shell_sets[number])
             for number in sorted(shell_sets)

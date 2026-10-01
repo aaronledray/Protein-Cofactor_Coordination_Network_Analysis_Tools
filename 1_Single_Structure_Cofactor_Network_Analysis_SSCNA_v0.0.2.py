@@ -119,6 +119,10 @@ DEFAULTS = {
     "combinatorial_cofactor_cutoff": 20.0,
     "shells": 2,
     "site_mode": "union",
+    "include_carbon_seeds": False,
+    "direct_coordination": False,
+    "direct_coordination_cutoff": 2.6,
+    "cofactor_class_cutoffs": {},
     "exclude_moieties": ["alanine_sidechain"],
 
     # Residues-of-Interest mode (template-relative indices before +1 step)
@@ -223,6 +227,16 @@ def str_to_list(s: Optional[str]) -> List[str]:
     if not s:
         return []
     return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def parse_class_cutoffs(values: Optional[List[str]]) -> Dict[str, float]:
+    cutoffs: Dict[str, float] = {}
+    for value in values or []:
+        if "=" not in value:
+            raise ValueError("--cofactor-class-cutoff must use CLASS=ANGSTROMS")
+        name, cutoff = value.split("=", 1)
+        cutoffs[name.strip().lower()] = float(cutoff)
+    return cutoffs
 
 def load_sidecar_config(template_path: str) -> Dict[str, Any]:
     """
@@ -344,6 +358,10 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     first_model_only = bool(params.get("first_model_only", False))
     shell_count = int(params.get("shells", 2))
     site_mode = params.get("site_mode", "union")
+    include_carbon_seeds = bool(params.get("include_carbon_seeds", False))
+    direct_coordination = bool(params.get("direct_coordination", False))
+    direct_coordination_cutoff = float(params.get("direct_coordination_cutoff", 2.6))
+    cofactor_class_cutoffs = params.get("cofactor_class_cutoffs") or {}
     output_dir = os.path.join(os.getcwd(), "SSCNA_output")
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = f"{tpl_basename}_"
@@ -353,7 +371,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     if cofactor2 and isinstance(cofactor2, str):
         cofactor2 = [cofactor2]
 
-    if shell_count != 2 or site_mode == "per-site":
+    if shell_count != 2 or site_mode == "per-site" or direct_coordination or cofactor_class_cutoffs:
         from modules.coordination_api import analyze_structure
 
         tables = analyze_structure(
@@ -368,6 +386,10 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             first_model_only=first_model_only,
             shells=shell_count,
             site_mode=site_mode,
+            include_carbon_seeds=include_carbon_seeds,
+            direct_coordination=direct_coordination,
+            direct_coordination_cutoff=direct_coordination_cutoff,
+            cofactor_class_cutoffs=cofactor_class_cutoffs,
         )
         tables["residues"].to_csv(
             os.path.join(output_dir, f"{file_prefix}Coordination_Residues.csv"),
@@ -411,6 +433,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         output_dir=output_dir,
         output_prefix=file_prefix,
         first_model_only=first_model_only,
+        include_carbon_seeds=include_carbon_seeds,
     )
 
 
@@ -546,6 +569,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--mode", choices=["Coord_Network", "Residues_of_Interest"], help="Run mode")
     p.add_argument("--no-plots", action="store_true", help="Skip PNG and HTML rendering")
     p.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
+    p.add_argument("--include-carbon-seeds", action="store_true", help="Allow carbon atoms to seed shells")
+    p.add_argument("--direct-coordination", action="store_true", help="Annotate direct metal-ligand links in tidy output")
+    p.add_argument("--direct-coordination-cutoff", type=float, default=None, help="Direct metal-ligand distance cutoff (Å)")
+    p.add_argument("--cofactor-class-cutoff", action="append", help="Class-specific cutoff, e.g. metal=2.8")
     p.add_argument("--verbose", action="store_true", help="Show informational progress logs")
     p.add_argument("--interactive", action="store_true", help="Force interactive prompting")
     return p.parse_args()
@@ -581,6 +608,14 @@ def main():
         cli_params["no_plots"] = True
     if args.first_model:
         cli_params["first_model_only"] = True
+    if args.include_carbon_seeds:
+        cli_params["include_carbon_seeds"] = True
+    if args.direct_coordination:
+        cli_params["direct_coordination"] = True
+    if args.direct_coordination_cutoff is not None:
+        cli_params["direct_coordination_cutoff"] = args.direct_coordination_cutoff
+    if args.cofactor_class_cutoff:
+        cli_params["cofactor_class_cutoffs"] = parse_class_cutoffs(args.cofactor_class_cutoff)
 
     if args.expand_residues and not args.no_expand_residues:
         cli_params["expand_residues"] = True

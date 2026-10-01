@@ -2,6 +2,7 @@
 candidate_designs/
 matches/
 SSCNA_output/
+coordination_batch_output/
 
 
 # OS:
@@ -13,3 +14,7 @@ __pycache__/
 modules/__pycache__
 *.pyc
 .venv/
+.pytest_cache/
+build/
+dist/
+*.egg-info/

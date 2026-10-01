@@ -1,200 +1,152 @@
 # Coordination Network Identifier
 
-Tools for extracting coordination networks around protein cofactors and comparing them across structures. The codebase is centered on Biopython utilities with plotting helpers for quick inspection.
+Coordination Network Identifier finds protein residues and atoms around a
+cofactor, labels primary and secondary coordination shells, and compares
+coordination networks across structures. It is designed for reproducible,
+headless use from Python or the command line.
 
+## What it provides
 
+- Single-structure coordination analysis for PDB and mmCIF files.
+- Legacy CSV/PNG/HTML reports for interactive inspection.
+- Side-effect-free pandas tables for downstream workflows.
+- Batch processing with multiprocessing and per-structure error isolation.
+- Optional per-site analysis, arbitrary shell depth, direct metal-ligand
+  annotations, carbon-seed inclusion, and class-specific distance cutoffs.
+- Chain deduplication through `modules/deduplicate_chains.py`.
 
----
+By default, PCS and SCS seed selection excludes carbon atoms, chooses at most
+one atom per chemical moiety except for the configured multi-atom moieties,
+and uses a 3.6 Å cutoff. Existing legacy runs retain their current defaults
+and output filenames.
 
+## Installation
 
-
-## What even is this?
-- Single-structure coordination analysis (primary and secondary spheres) with optional residue expansion, combinatorial multi-cofactor filtering, and moiety exclusions.
-- CSV, HTML, and PNG outputs that capture coordination atoms, moiety labels, and simple network plots.
-- Template-to-query alignment that takes a template coordination CSV plus a candidate structure, aligns common atoms, and records RMSD.
-- Chain deduplication to clean PDB/mmCIF inputs by sequence or by atomic coordinates, with ligand-based masking.
-
-
-
-
-## Motivation:
-
-- I got tired of manually finding interactions between proteins and their cofactors.
-- Needed a robust definition of coordination networks; literature's "seconady coordination sphere" was too vague for protein design workflows (rather for my applications, thereof)!
-
-
-
----
-
-
-
-
-
-
-
-## Requirements:
-- Python 3.9 or newer.
-- Packages: biopython, numpy, pandas, matplotlib, plotly.
-
-
-
-
-
-
-
-
-## Repository layout
-- `modules/`: core logic for coordination finding, IO, plotting, deduplication.
-- `output/`: sample outputs from prior runs.
-- `matches/`: alignment job folders created by the comparison script.
-- `data/`: example structures.
-- Legacy single-file scripts are kept in the project root and `Archived/` for reference.
-
-
-
-
-
-
-
-
-## Set up a virtual environment and install:
+Python 3.9 or newer is supported.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install biopython numpy pandas matplotlib plotly
+python -m pip install -r requirements.txt
 ```
 
+## Single-structure analysis
 
+The original SSCNA command remains available:
 
-Activate:
-
-``` zsh
-source .venv/bin/activate
-```
-
-then when ready to revert to SYSTEM python, use:
-
-``` zsh
-deactivate
-```
-
-
-
-
-
-
-
-
-
----
-
-# Running:
-
-## Single-structure analysis (SSCNA)
-Script: `1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py`
-
-
-
-
-
-Example 1 plastocyanin:
 ```bash
 python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
-  --template ./reference_structures/0_Plastocyanin/1ag6.cif \
+  --template reference_structures/0_Plastocyanin/1ag6.cif \
   --cofactor CU \
   --distance 3.6 \
   --exclude-moieties alanine_sidechain \
   --mode Coord_Network
 ```
 
+Outputs are written under `SSCNA_output/`:
 
+- `<structure>_Coord_Breakdown.csv`: residue summary plus atom coordinates.
+- `<structure>_Coord_Breakdown_atoms.csv`: atom-level category report.
+- `<structure>_Coord_Links.csv`: nearest cofactor→PCS and PCS→SCS links.
+- PNG and HTML plots, unless `--no-plots` is supplied.
 
+Useful additive options include:
 
-Example 2 OEC:
-```bash
-python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
-  --template ./reference_structures/1_OEX/0_Aligned_Reduced/4ub6.pdb \
-  --cofactor OEX \
-  --distance 3.6 \
-  --combinatorial-cutoff 20.0 \
-  --exclude-moieties alanine_sidechain \
-  --mode Coord_Network
+```text
+--no-plots                         Skip PNG/HTML rendering.
+--first-model                      Analyze only the first model.
+--shells N                         Add TCS and deeper shells for N > 2.
+--per-site                         Separate cofactor sites in tidy output.
+--include-carbon-seeds             Allow carbon atoms to seed shells.
+--direct-coordination              Annotate direct metal-ligand links.
+--direct-coordination-cutoff 2.6   Set the direct-link distance in Å.
+--cofactor-class-cutoff metal=2.8  Override a class cutoff; repeatable.
+--verbose                          Show progress logs.
 ```
 
+The legacy command currently scans all structure models unless
+`--first-model` is supplied. Alternate locations are not assigned a custom
+policy; Biopython's normal disordered-atom selection behavior is used.
 
+For `--shells N` with `N > 2`, the command writes tidy
+`Coordination_Residues.csv`, `Coordination_Atoms.csv`, and `Coord_Links.csv`
+tables and does not attempt the legacy two-shell plots.
 
+## Importable API
 
-Example 3 Nitrogenase:
-```bash
-python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
-  --template ./reference_structures/2_Nitrogenase/3u7q_monomer.pdb \
-  --cofactor HCA,ICS \
-  --distance 3.6 \
-  --combinatorial \
-  --combinatorial-cutoff 20.0 \
-  --exclude-moieties alanine_sidechain \
-  --mode Coord_Network
+```python
+from modules.coordination_api import analyze_structure
+
+tables = analyze_structure(
+    "reference_structures/0_Plastocyanin/1ag6.cif",
+    "CU",
+    exclude_moieties=["alanine_sidechain"],
+)
+
+residues = tables["residues"]
+links = tables["links"]
 ```
 
+`analyze_structure()` creates no files and returns `residues`, `atoms`, and
+`links` pandas DataFrames. The residue table has one row per residue per site
+and shell, including structure ID, cofactor identity, residue identity,
+atoms involved, and minimum distance to the previous shell. Insertion codes
+and hetero flags are retained in the tidy tables.
 
+Use `site_mode="per-site"` to separate cofactor copies. With
+`combinatorial=True`, cofactor residues within the combinatorial cutoff are
+clustered into one site; this is useful for multi-cofactor systems such as
+nitrogenase.
 
+## Batch analysis
 
-
-
-Key flags:
-- `--template` path to the structure (PDB/mmCIF, gz accepted).
-- `--cofactor` (and `--cofactor2` when using combinatorial mode) comma-separated residue names. Note this means the LIST of cofactors as just 'cofactor' is appropriate. Cofactor 1 and cofactor 2 designation is to be used when looking for the only instance of cofactor 1 within proximity of cofactor 2, etc.
-- `--distance` cutoff for moiety interactions (Å).
-- `--expand-residues` to include full residues for PCS/SCS atoms.
-- `--combinatorial` plus `--combinatorial-cutoff` to keep cofactors near one another.
-- `--exclude-moieties` comma-separated labels to ignore (e.g., alanine_sidechain).
-- `--mode` `Coord_Network` (default) or `Residues_of_Interest`.
-- `--interactive` prompts for missing parameters.
-
-
-
-
-
-
-
-
-
-
-
-
-## Template vs. query alignment
-Script: `2_Single_Template_Single_Query_Network_Comparison_v0.0.2.py`
-
-
-
-
-Example:
 ```bash
-python 2_Single_Template_Single_Query_Network_Comparison_v0.0.2.py \
-  --template-csv output/4ub6.pdb_Coord_Breakdown.csv \
-  --query-structure data/3_OEX_Designed_Protein_Candidates/.../model.cif \
-  --job-name OEX_testmatch1
+python batch_coordination_network.py \
+  --input reference_structures/0_Plastocyanin \
+  --cofactor CU \
+  --workers 4 \
+  --output-dir coordination_batch_output
 ```
 
-Behavior:
-- Writes `matches/<job-name>/accessory_names.txt` with allowed residue/atom synonyms (edit if needed).
-- Appends alignment results to `matches/<job-name>/alignment_report.csv` with atoms used and RMSD.
-- Requires at least three shared atom names between template and query.
+The batch command writes combined `coordination_residues.csv`,
+`coordination_atoms.csv`, `coordination_links.csv`, and
+`coordination_errors.csv`. A malformed or missing structure is recorded in
+the error table without stopping other structures.
 
-## Chain deduplication helper
-Script: `modules/deduplicate_chains.py` (run directly).
+## Reference structures and validation
 
-Use it to collapse duplicate chains before coordination analysis.
+The repository includes small reference cases for regression and chemistry
+checks:
+
+- Plastocyanin `1ag6`: His37, Cys84, His87, and Met92 are PCS contacts.
+- Myoglobin `1a6m`: proximal His93 is PCS and distal His64 is SCS.
+- Carbonic anhydrase `1ca2`: the single Zn site includes His94, His96, and
+  His119 as PCS contacts.
+- Ferredoxin `2zvs`: six SF4 cofactors are parsed and cysteine ligands are
+  detected in the PCS output.
+- OEC `4ub6` and nitrogenase `3u7q_monomer` provide multi-cofactor regression
+  coverage.
+
+Run the regression and validation suite with:
+
 ```bash
-python modules/deduplicate_chains.py 5jqr.cif
-python modules/deduplicate_chains.py ./structures --by coords --mask-res HEM,CU1 --yes
+python -m unittest discover -s tests -v
 ```
 
+## Repository layout
 
+```text
+modules/                         Core analysis and reporting code
+tests/                           Regression and chemistry validation tests
+reference_structures/            Public example structures
+1_Single_..._SSCNA_v0.0.2.py    Legacy single-structure CLI
+batch_coordination_network.py   Headless batch CLI
+```
 
-Options:
-- `--by` `sequence` (default) or `coords` for exact coordinate signatures.
-- `--mask-res` comma-separated residue names; when duplicates exist, keeps the chain containing those residues (`--mask-mode` all|any).
-- `--yes` for non-interactive runs; `--dry-run` to report without writing.
-- Writes `<input>_dedup.pdb` (or similar) next to the source or to `--outdir`.
+Generated analysis outputs belong in ignored output directories. Do not add
+credentials, private structures, or local development notes to the public
+repository.
+
+## License
+
+See [LICENSE](LICENSE).

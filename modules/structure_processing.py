@@ -44,6 +44,10 @@ logger = logging.getLogger(__name__)
 
 # ---- Config: exclude certain elements from *seed coordinators* (not from expansion) ----
 EXCLUDED_COORD_ELEMENTS: Set[str] = {"C"}   # <- your requested change
+METAL_ION_RESNAMES: Set[str] = {
+    "AG", "AL", "AU", "CA", "CD", "CO", "CU", "FE", "HG", "K",
+    "LI", "MG", "MN", "MO", "NA", "NI", "PB", "PD", "PT", "SN", "V", "ZN",
+}
 
 
 
@@ -124,6 +128,8 @@ def _coord_link_rows(
                     "src_hetero_flag": src.get("hetero_flag", ""),
                     "dst_insertion_code": pcs.get("insertion_code", ""),
                     "dst_hetero_flag": pcs.get("hetero_flag", ""),
+                    "src_element": src.get("element", ""),
+                    "dst_element": pcs.get("element", ""),
                 }
             )
         rows.append(row)
@@ -148,6 +154,8 @@ def _coord_link_rows(
                     "src_hetero_flag": src.get("hetero_flag", ""),
                     "dst_insertion_code": scs.get("insertion_code", ""),
                     "dst_hetero_flag": scs.get("hetero_flag", ""),
+                    "src_element": src.get("element", ""),
+                    "dst_element": scs.get("element", ""),
                 }
             )
         rows.append(row)
@@ -1501,6 +1509,7 @@ def _filter_seed_candidates(
     exclude_residue_keys: Set[Tuple[str,int,str]],
     max_dist_from_set: float,
     reference_set_coords: np.ndarray,
+    excluded_elements: Optional[Set[str]] = None,
 ) -> List[AtomDict]:
     if reference_set_coords.size == 0:
         return []
@@ -1509,7 +1518,7 @@ def _filter_seed_candidates(
     dmin = _pairwise_min_dist(coords, reference_set_coords)
     for a, d in zip(atoms, dmin):
         elem = str(a.get("element","")).upper()
-        if elem in EXCLUDED_COORD_ELEMENTS:
+        if elem in (EXCLUDED_COORD_ELEMENTS if excluded_elements is None else excluded_elements):
             continue
         if _identity_rkey(a) in exclude_residue_keys:
             continue
@@ -1619,6 +1628,7 @@ def identify_coordination_network(
     output_prefix: str = "",
     write_coord_links: bool = True,
     first_model_only: bool = False,
+    include_carbon_seeds: bool = False,
 ):
     """
     SAME SIGNATURE.
@@ -1669,6 +1679,7 @@ def identify_coordination_network(
         exclude_residue_keys={_identity_rkey(a) for a in cofactor_sphere},
         max_dist_from_set=distance_cutoff,
         reference_set_coords=cof_coords,
+        excluded_elements=set() if include_carbon_seeds else EXCLUDED_COORD_ELEMENTS,
     )
     pcs_seed = _multi_pick_for_group(
         pcs_candidates,
@@ -1690,6 +1701,7 @@ def identify_coordination_network(
         exclude_residue_keys=({_identity_rkey(a) for a in cofactor_sphere} | {_identity_rkey(a) for a in pcs_seed}),
         max_dist_from_set=distance_cutoff,             # SCS threshold is to PCS seed set
         reference_set_coords=pcs_coords,
+        excluded_elements=set() if include_carbon_seeds else EXCLUDED_COORD_ELEMENTS,
     )
     scs_seed = _multi_pick_for_group(
         scs_candidates,
@@ -1794,6 +1806,8 @@ def _shell_coord_link_rows(
                         "src_hetero_flag": source_atom.get("hetero_flag", ""),
                         "dst_insertion_code": target.get("insertion_code", ""),
                         "dst_hetero_flag": target.get("hetero_flag", ""),
+                        "src_element": source_atom.get("element", ""),
+                        "dst_element": target.get("element", ""),
                     }
                 )
             rows.append(row)
@@ -1825,6 +1839,7 @@ def identify_coordination_shells(
     shells: int = 3,
     cofactor_site_keys: Optional[Set[Tuple[str, object, str, str, str]]] = None,
     include_link_identity: bool = False,
+    include_carbon_seeds: bool = False,
 ) -> Tuple[List[AtomDict], Dict[int, List[AtomDict]], List[Dict[str, object]]]:
     """Identify an arbitrary number of coordination shells.
 
@@ -1881,6 +1896,7 @@ def identify_coordination_shells(
             exclude_residue_keys=excluded,
             max_dist_from_set=distance_cutoff,
             reference_set_coords=reference_coords,
+            excluded_elements=set() if include_carbon_seeds else EXCLUDED_COORD_ELEMENTS,
         )
         seeds = _multi_pick_for_group(
             candidates,
