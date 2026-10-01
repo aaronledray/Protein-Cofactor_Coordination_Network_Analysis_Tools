@@ -63,6 +63,18 @@ class CoordinationApiTests(unittest.TestCase):
         )
         self.assertEqual(set(result["links"]["structure_id"]), {"1ag6", "4ub6"})
 
+    def test_shells_three_adds_tcs_and_adjacent_links(self):
+        with redirect_stdout(StringIO()):
+            result = analyze_structure(
+                PLASTOCYANIN,
+                "CU",
+                exclude_moieties=["alanine_sidechain"],
+                shells=3,
+            )
+
+        self.assertIn("TCS", set(result["residues"]["shell"]))
+        self.assertIn("scs->tcs", set(result["links"]["link_type"]))
+
 
 if __name__ == "__main__":
     unittest.main()

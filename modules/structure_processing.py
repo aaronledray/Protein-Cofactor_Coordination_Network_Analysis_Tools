@@ -1720,6 +1720,164 @@ def identify_coordination_network(
     return cofactor_sphere, pcs_atoms, scs_atoms
 
 
+def _shell_label(shell_number: int) -> str:
+    return {
+        1: "PCS",
+        2: "SCS",
+        3: "TCS",
+    }.get(shell_number, f"Shell{shell_number}")
+
+
+def _shell_link_label(shell_number: int) -> str:
+    return {
+        0: "cofactor",
+        1: "pcs",
+        2: "scs",
+        3: "tcs",
+    }.get(shell_number, f"shell{shell_number}")
+
+
+def _shell_coord_link_rows(
+    cofactor_atoms: List[AtomDict],
+    shell_atoms: Dict[int, List[AtomDict]],
+) -> List[Dict[str, object]]:
+    """Build nearest-atom links between each adjacent shell."""
+    rows: List[Dict[str, object]] = []
+    for shell_number in sorted(shell_atoms):
+        destination = shell_atoms[shell_number]
+        source = cofactor_atoms if shell_number == 1 else shell_atoms.get(shell_number - 1, [])
+        link_type = f"{_shell_link_label(shell_number - 1)}->{_shell_link_label(shell_number)}"
+        for target in destination:
+            source_atom, distance = _nearest_source_atom(source, target)
+            if source_atom is None:
+                continue
+            rows.append(
+                {
+                    "link_type": link_type,
+                    "src_resname": source_atom["residue"],
+                    "src_resnum": source_atom["residue_number"],
+                    "src_chain": source_atom.get("chain", ""),
+                    "src_atom": source_atom["name"],
+                    "src_moiety": source_atom.get("moiety", ""),
+                    "dst_resname": target["residue"],
+                    "dst_resnum": target["residue_number"],
+                    "dst_chain": target.get("chain", ""),
+                    "dst_atom": target["name"],
+                    "dst_moiety": target.get("moiety", ""),
+                    "distance_A": f"{distance:.3f}",
+                }
+            )
+    return rows
+
+
+def _write_shell_coord_links_csv(path: str, rows: List[Dict[str, object]]) -> int:
+    with open(path, "w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=COORD_LINK_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    logger.info("Coord links: wrote %d links to '%s'", len(rows), path)
+    return len(rows)
+
+
+def identify_coordination_shells(
+    structure,
+    cofactor_resname: List[str],
+    distance_cutoff: float,
+    expand_residues: bool,
+    combinatorial_mode: bool,
+    combinatorial_cofactor_cutoff: Optional[float] = None,
+    cofactor_resname2: Optional[List[str]] = None,
+    exclude_moieties: Optional[List[str]] = None,
+    output_dir: Optional[str] = None,
+    output_prefix: str = "",
+    write_coord_links: bool = True,
+    first_model_only: bool = False,
+    shells: int = 3,
+) -> Tuple[List[AtomDict], Dict[int, List[AtomDict]], List[Dict[str, object]]]:
+    """Identify an arbitrary number of coordination shells.
+
+    Shell 1 is PCS, shell 2 is SCS, shell 3 is TCS, and deeper shells use
+    ``Shell4``/``Shell5`` labels. This function is additive; the legacy
+    two-shell API remains unchanged.
+    """
+    if shells < 1:
+        raise ValueError("shells must be at least 1")
+
+    models = list(structure)
+    if first_model_only:
+        models = models[:1]
+
+    all_atoms: List[AtomDict] = []
+    for model in models:
+        for chain in model:
+            for residue in chain:
+                residue_id = residue.get_id()
+                for atom in residue:
+                    all_atoms.append(
+                        {
+                            "name": atom.get_name(),
+                            "residue": residue.get_resname(),
+                            "residue_number": residue_id[1],
+                            "chain": chain.id,
+                            "insertion_code": str(residue_id[2] or "").strip(),
+                            "hetero_flag": str(residue_id[0] or "").strip(),
+                            "model_id": model.id,
+                            "element": getattr(atom, "element", ""),
+                            "coordinates": np.array(atom.coord, dtype=float),
+                        }
+                    )
+
+    cofactor_names = {name.upper() for name in (cofactor_resname or [])}
+    if cofactor_resname2:
+        cofactor_names.update(name.upper() for name in cofactor_resname2)
+    cofactor_atoms = [
+        atom for atom in all_atoms if str(atom["residue"]).upper() in cofactor_names
+    ]
+
+    shell_atoms: Dict[int, List[AtomDict]] = {}
+    excluded = {_identity_rkey(atom) for atom in cofactor_atoms}
+    reference_coords = _np_coords(cofactor_atoms)
+    exclusions = exclude_moieties or []
+
+    for shell_number in range(1, shells + 1):
+        candidates = _filter_seed_candidates(
+            atoms=[atom for atom in all_atoms if str(atom["residue"]).upper() not in cofactor_names],
+            exclude_residue_keys=excluded,
+            max_dist_from_set=distance_cutoff,
+            reference_set_coords=reference_coords,
+        )
+        seeds = _multi_pick_for_group(
+            candidates,
+            reference_set_coords=reference_coords,
+            policy=MULTI_COORD_POLICY,
+            default_k=1,
+        )
+        shell_atoms[shell_number] = seeds
+        logger.info("%s seeds: %d atoms", _shell_label(shell_number), len(seeds))
+        excluded.update(_identity_rkey(atom) for atom in seeds)
+        reference_coords = _np_coords(seeds)
+
+    if expand_residues:
+        for shell_number, atoms in list(shell_atoms.items()):
+            shell_atoms[shell_number] = _expand_by_moiety_and_backbone_with_logging(
+                atoms,
+                structure,
+                exclude_moieties=exclusions,
+                models=models,
+            )
+
+    link_rows = _shell_coord_link_rows(cofactor_atoms, shell_atoms)
+    if write_coord_links:
+        out_dir = output_dir or "."
+        os.makedirs(out_dir, exist_ok=True)
+        _write_shell_coord_links_csv(
+            os.path.join(out_dir, f"{output_prefix}Coord_Links.csv"),
+            link_rows,
+        )
+
+    return cofactor_atoms, shell_atoms, link_rows
+
+
 
 
 # def identify_coordination_network(

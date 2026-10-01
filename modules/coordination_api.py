@@ -15,6 +15,8 @@ from .io_utils import unpack_pdb_file
 from .structure_processing import (
     COORD_LINK_COLUMNS,
     _coord_link_rows,
+    _shell_label,
+    identify_coordination_shells,
     identify_coordination_network,
 )
 
@@ -159,6 +161,7 @@ def analyze_structure(
     cofactor_resname2: Optional[Union[str, Sequence[str]]] = None,
     exclude_moieties: Optional[Sequence[str]] = None,
     first_model_only: bool = False,
+    shells: int = 2,
 ) -> Dict[str, pd.DataFrame]:
     """Analyze one structure without creating files or plots.
 
@@ -181,40 +184,57 @@ def analyze_structure(
     cofactor_names2 = _as_names(cofactor_resname2 or [])
     exclusions = list(exclude_moieties or [])
 
-    cofactor_atoms, pcs_atoms, scs_atoms = identify_coordination_network(
-        structure=structure,
-        cofactor_resname=cofactor_names,
-        distance_cutoff=distance_cutoff,
-        expand_residues=expand_residues,
-        combinatorial_mode=combinatorial,
-        combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
-        cofactor_resname2=cofactor_names2 or None,
-        exclude_moieties=exclusions,
-        output_dir=None,
-        output_prefix="",
-        write_coord_links=False,
-        first_model_only=first_model_only,
-    )
+    if shells == 2:
+        cofactor_atoms, pcs_atoms, scs_atoms = identify_coordination_network(
+            structure=structure,
+            cofactor_resname=cofactor_names,
+            distance_cutoff=distance_cutoff,
+            expand_residues=expand_residues,
+            combinatorial_mode=combinatorial,
+            combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
+            cofactor_resname2=cofactor_names2 or None,
+            exclude_moieties=exclusions,
+            output_dir=None,
+            output_prefix="",
+            write_coord_links=False,
+            first_model_only=first_model_only,
+        )
+        shell_sets = {1: pcs_atoms, 2: scs_atoms}
+        link_rows = _coord_link_rows(cofactor_atoms, pcs_atoms, scs_atoms)
+    else:
+        cofactor_atoms, shell_sets, link_rows = identify_coordination_shells(
+            structure=structure,
+            cofactor_resname=cofactor_names,
+            distance_cutoff=distance_cutoff,
+            expand_residues=expand_residues,
+            combinatorial_mode=combinatorial,
+            combinatorial_cofactor_cutoff=combinatorial_cofactor_cutoff,
+            cofactor_resname2=cofactor_names2 or None,
+            exclude_moieties=exclusions,
+            output_dir=None,
+            output_prefix="",
+            write_coord_links=False,
+            first_model_only=first_model_only,
+            shells=shells,
+        )
 
-    link_rows = _coord_link_rows(cofactor_atoms, pcs_atoms, scs_atoms)
     structure_id = _structure_id(path)
     site_id = "all"
-    shells = (
-        ("Cofactor", cofactor_atoms),
-        ("PCS", pcs_atoms),
-        ("SCS", scs_atoms),
-    )
+    shell_tables = [("Cofactor", cofactor_atoms)] + [
+        (_shell_label(number), shell_sets[number])
+        for number in sorted(shell_sets)
+    ]
 
     links = pd.DataFrame(
         [{"structure_id": structure_id, **row} for row in link_rows],
         columns=LINK_COLUMNS,
     )
-    atoms = _atom_rows(structure_id, site_id, shells)
+    atoms = _atom_rows(structure_id, site_id, shell_tables)
     residues = _residue_rows(
         structure_id,
         site_id,
         cofactor_atoms,
-        shells,
+        shell_tables,
         link_rows,
     )
 

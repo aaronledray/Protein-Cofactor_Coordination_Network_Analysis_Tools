@@ -117,6 +117,7 @@ DEFAULTS = {
     "expand_residues": False,
     "combinatorial": False,
     "combinatorial_cofactor_cutoff": 20.0,
+    "shells": 2,
     "exclude_moieties": ["alanine_sidechain"],
 
     # Residues-of-Interest mode (template-relative indices before +1 step)
@@ -340,6 +341,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     exclude_moieties = params["exclude_moieties"] or []
     no_plots = bool(params.get("no_plots", False))
     first_model_only = bool(params.get("first_model_only", False))
+    shell_count = int(params.get("shells", 2))
     output_dir = os.path.join(os.getcwd(), "SSCNA_output")
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = f"{tpl_basename}_"
@@ -348,6 +350,36 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         cofactor1 = [cofactor1]
     if cofactor2 and isinstance(cofactor2, str):
         cofactor2 = [cofactor2]
+
+    if shell_count != 2:
+        from modules.coordination_api import analyze_structure
+
+        tables = analyze_structure(
+            tpl,
+            cofactor1,
+            distance_cutoff=distance_cutoff,
+            expand_residues=expand_residues,
+            combinatorial=combinatorial,
+            combinatorial_cofactor_cutoff=comb_cutoff,
+            cofactor_resname2=cofactor2,
+            exclude_moieties=exclude_moieties,
+            first_model_only=first_model_only,
+            shells=shell_count,
+        )
+        tables["residues"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coordination_Residues.csv"),
+            index=False,
+        )
+        tables["atoms"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coordination_Atoms.csv"),
+            index=False,
+        )
+        tables["links"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coord_Links.csv"),
+            index=False,
+        )
+        logger.info("Wrote %d-shell tidy coordination tables.", shell_count)
+        return
 
     logger.info("Loading structure: %s", tpl)
     structure, atoms_data = unpack_pdb_file(tpl)
@@ -500,6 +532,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cofactor", dest="cofactor_resname", help="Cofactor residue name(s), comma-separated")
     p.add_argument("--cofactor2", dest="cofactor_resname2", help="Second cofactor residue name(s), comma-separated")
     p.add_argument("--distance", dest="distance_cutoff", type=float, help="Distance cutoff for moiety interactions (Å)")
+    p.add_argument("--shells", type=int, help="Number of coordination shells (default: 2)")
     p.add_argument("--expand-residues", action="store_true", help="Expand PCS/SCS to entire residues")
     p.add_argument("--no-expand-residues", action="store_true", help="Do not expand residues")
     p.add_argument("--combinatorial", action="store_true", help="Enable combinatorial mode")
@@ -532,6 +565,8 @@ def main():
         cli_params["distance_cutoff"] = args.distance_cutoff
     if args.combinatorial_cofactor_cutoff is not None:
         cli_params["combinatorial_cofactor_cutoff"] = args.combinatorial_cofactor_cutoff
+    if args.shells is not None:
+        cli_params["shells"] = args.shells
     if args.exclude_moieties:
         cli_params["exclude_moieties"] = str_to_list(args.exclude_moieties)
     if args.mode:
