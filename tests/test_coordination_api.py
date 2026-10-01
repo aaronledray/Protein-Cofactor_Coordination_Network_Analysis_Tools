@@ -75,6 +75,19 @@ class CoordinationApiTests(unittest.TestCase):
         self.assertIn("TCS", set(result["residues"]["shell"]))
         self.assertIn("scs->tcs", set(result["links"]["link_type"]))
 
+    def test_per_site_mode_assigns_stable_site_ids(self):
+        with redirect_stdout(StringIO()):
+            result = analyze_structure(
+                PLASTOCYANIN,
+                "CU",
+                exclude_moieties=["alanine_sidechain"],
+                site_mode="per-site",
+            )
+
+        self.assertEqual(set(result["residues"]["site_id"]), {"site_1"})
+        self.assertEqual(set(result["atoms"]["site_id"]), {"site_1"})
+        self.assertIn("site_id", result["links"].columns)
+
 
 if __name__ == "__main__":
     unittest.main()

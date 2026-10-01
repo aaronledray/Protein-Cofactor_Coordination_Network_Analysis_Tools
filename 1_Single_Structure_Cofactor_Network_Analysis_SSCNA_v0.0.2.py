@@ -118,6 +118,7 @@ DEFAULTS = {
     "combinatorial": False,
     "combinatorial_cofactor_cutoff": 20.0,
     "shells": 2,
+    "site_mode": "union",
     "exclude_moieties": ["alanine_sidechain"],
 
     # Residues-of-Interest mode (template-relative indices before +1 step)
@@ -342,6 +343,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     no_plots = bool(params.get("no_plots", False))
     first_model_only = bool(params.get("first_model_only", False))
     shell_count = int(params.get("shells", 2))
+    site_mode = params.get("site_mode", "union")
     output_dir = os.path.join(os.getcwd(), "SSCNA_output")
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = f"{tpl_basename}_"
@@ -351,7 +353,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     if cofactor2 and isinstance(cofactor2, str):
         cofactor2 = [cofactor2]
 
-    if shell_count != 2:
+    if shell_count != 2 or site_mode == "per-site":
         from modules.coordination_api import analyze_structure
 
         tables = analyze_structure(
@@ -365,6 +367,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             exclude_moieties=exclude_moieties,
             first_model_only=first_model_only,
             shells=shell_count,
+            site_mode=site_mode,
         )
         tables["residues"].to_csv(
             os.path.join(output_dir, f"{file_prefix}Coordination_Residues.csv"),
@@ -533,6 +536,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cofactor2", dest="cofactor_resname2", help="Second cofactor residue name(s), comma-separated")
     p.add_argument("--distance", dest="distance_cutoff", type=float, help="Distance cutoff for moiety interactions (Å)")
     p.add_argument("--shells", type=int, help="Number of coordination shells (default: 2)")
+    p.add_argument("--per-site", action="store_true", help="Analyze each cofactor site separately")
     p.add_argument("--expand-residues", action="store_true", help="Expand PCS/SCS to entire residues")
     p.add_argument("--no-expand-residues", action="store_true", help="Do not expand residues")
     p.add_argument("--combinatorial", action="store_true", help="Enable combinatorial mode")
@@ -567,6 +571,8 @@ def main():
         cli_params["combinatorial_cofactor_cutoff"] = args.combinatorial_cofactor_cutoff
     if args.shells is not None:
         cli_params["shells"] = args.shells
+    if args.per_site:
+        cli_params["site_mode"] = "per-site"
     if args.exclude_moieties:
         cli_params["exclude_moieties"] = str_to_list(args.exclude_moieties)
     if args.mode:

@@ -99,6 +99,7 @@ def _coord_link_rows(
     cofactor_atoms: List[AtomDict],
     pcs_seed_atoms: List[AtomDict],
     scs_seed_atoms: List[AtomDict],
+    include_identity: bool = False,
 ) -> List[Dict[str, object]]:
     """Build the legacy cofactor→PCS and PCS→SCS edge rows in stable order."""
     rows = []
@@ -108,28 +109,48 @@ def _coord_link_rows(
         src, dist = _nearest_source_atom(cofactor_atoms, pcs)
         if src is None:
             continue
-        rows.append({
+        row = {
             "link_type": "cofactor->pcs",
             "src_resname": src["residue"], "src_resnum": src["residue_number"], "src_chain": src.get("chain",""),
             "src_atom": src["name"], "src_moiety": src.get("moiety", ""),  # moiety optional if you’ve added it
             "dst_resname": pcs["residue"], "dst_resnum": pcs["residue_number"], "dst_chain": pcs.get("chain",""),
             "dst_atom": pcs["name"], "dst_moiety": pcs.get("moiety", ""),
             "distance_A": f"{dist:.3f}",
-        })
+        }
+        if include_identity:
+            row.update(
+                {
+                    "src_insertion_code": src.get("insertion_code", ""),
+                    "src_hetero_flag": src.get("hetero_flag", ""),
+                    "dst_insertion_code": pcs.get("insertion_code", ""),
+                    "dst_hetero_flag": pcs.get("hetero_flag", ""),
+                }
+            )
+        rows.append(row)
 
     # 2) PCS -> SCS (nearest PCS seed)
     for scs in scs_seed_atoms:
         src, dist = _nearest_source_atom(pcs_seed_atoms, scs)
         if src is None:
             continue
-        rows.append({
+        row = {
             "link_type": "pcs->scs",
             "src_resname": src["residue"], "src_resnum": src["residue_number"], "src_chain": src.get("chain",""),
             "src_atom": src["name"], "src_moiety": src.get("moiety", ""),
             "dst_resname": scs["residue"], "dst_resnum": scs["residue_number"], "dst_chain": scs.get("chain",""),
             "dst_atom": scs["name"], "dst_moiety": scs.get("moiety", ""),
             "distance_A": f"{dist:.3f}",
-        })
+        }
+        if include_identity:
+            row.update(
+                {
+                    "src_insertion_code": src.get("insertion_code", ""),
+                    "src_hetero_flag": src.get("hetero_flag", ""),
+                    "dst_insertion_code": scs.get("insertion_code", ""),
+                    "dst_hetero_flag": scs.get("hetero_flag", ""),
+                }
+            )
+        rows.append(row)
 
     return rows
 
@@ -1740,6 +1761,7 @@ def _shell_link_label(shell_number: int) -> str:
 def _shell_coord_link_rows(
     cofactor_atoms: List[AtomDict],
     shell_atoms: Dict[int, List[AtomDict]],
+    include_identity: bool = False,
 ) -> List[Dict[str, object]]:
     """Build nearest-atom links between each adjacent shell."""
     rows: List[Dict[str, object]] = []
@@ -1751,8 +1773,7 @@ def _shell_coord_link_rows(
             source_atom, distance = _nearest_source_atom(source, target)
             if source_atom is None:
                 continue
-            rows.append(
-                {
+            row = {
                     "link_type": link_type,
                     "src_resname": source_atom["residue"],
                     "src_resnum": source_atom["residue_number"],
@@ -1765,8 +1786,17 @@ def _shell_coord_link_rows(
                     "dst_atom": target["name"],
                     "dst_moiety": target.get("moiety", ""),
                     "distance_A": f"{distance:.3f}",
-                }
-            )
+            }
+            if include_identity:
+                row.update(
+                    {
+                        "src_insertion_code": source_atom.get("insertion_code", ""),
+                        "src_hetero_flag": source_atom.get("hetero_flag", ""),
+                        "dst_insertion_code": target.get("insertion_code", ""),
+                        "dst_hetero_flag": target.get("hetero_flag", ""),
+                    }
+                )
+            rows.append(row)
     return rows
 
 
@@ -1793,6 +1823,8 @@ def identify_coordination_shells(
     write_coord_links: bool = True,
     first_model_only: bool = False,
     shells: int = 3,
+    cofactor_site_keys: Optional[Set[Tuple[str, object, str, str, str]]] = None,
+    include_link_identity: bool = False,
 ) -> Tuple[List[AtomDict], Dict[int, List[AtomDict]], List[Dict[str, object]]]:
     """Identify an arbitrary number of coordination shells.
 
@@ -1833,6 +1865,10 @@ def identify_coordination_shells(
     cofactor_atoms = [
         atom for atom in all_atoms if str(atom["residue"]).upper() in cofactor_names
     ]
+    if cofactor_site_keys is not None:
+        cofactor_atoms = [
+            atom for atom in cofactor_atoms if _identity_rkey(atom) in cofactor_site_keys
+        ]
 
     shell_atoms: Dict[int, List[AtomDict]] = {}
     excluded = {_identity_rkey(atom) for atom in cofactor_atoms}
@@ -1866,7 +1902,11 @@ def identify_coordination_shells(
                 models=models,
             )
 
-    link_rows = _shell_coord_link_rows(cofactor_atoms, shell_atoms)
+    link_rows = _shell_coord_link_rows(
+        cofactor_atoms,
+        shell_atoms,
+        include_identity=include_link_identity,
+    )
     if write_coord_links:
         out_dir = output_dir or "."
         os.makedirs(out_dir, exist_ok=True)
