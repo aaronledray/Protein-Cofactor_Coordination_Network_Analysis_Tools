@@ -1,0 +1,8 @@
+link_type,src_resname,src_resnum,src_chain,src_atom,src_moiety,dst_resname,dst_resnum,dst_chain,dst_atom,dst_moiety,distance_A
+cofactor->pcs,CU,200,A,CU,,PRO,36,A,O,,3.467
+cofactor->pcs,CU,200,A,CU,,HIS,37,A,ND1,,1.963
+cofactor->pcs,CU,200,A,CU,,CYS,84,A,SG,,2.149
+cofactor->pcs,CU,200,A,CU,,HIS,87,A,ND1,,2.010
+cofactor->pcs,CU,200,A,CU,,MET,92,A,SD,,2.883
+pcs->scs,CYS,84,A,SG,,ASN,38,A,N,,3.446
+pcs->scs,CYS,84,A,SG,,SER,85,A,N,,3.575
