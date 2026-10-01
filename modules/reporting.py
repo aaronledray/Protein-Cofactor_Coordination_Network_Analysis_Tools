@@ -211,6 +211,7 @@ def write_coord_breakdown_v2(
     scs_atoms: List[Dict],
     moiety_lookup: Dict[Tuple[str, str], str],  # your moiety table (incl. HEM/ICS/HCA/etc.)
     output_csv_path: str = "Coord_Breakdown.csv",
+    first_model_only: bool = False,
 ):
     """
     Writes a per-atom CSV with columns:
@@ -247,7 +248,10 @@ def write_coord_breakdown_v2(
     ]
 
     # Iterate structure and dump atoms for residues we care about
-    for model in structure:
+    models = list(structure)
+    if first_model_only:
+        models = models[:1]
+    for model in models:
         for chain in model:
             chain_id = str(chain.id)
             for residue in chain:

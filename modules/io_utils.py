@@ -52,6 +52,7 @@ def unpack_pdb_file(struct_path: str) -> Tuple[Any, List[Dict]]:
                 resname = residue.get_resname()
                 resnum = _safe_resnum(residue)
                 for atom in residue:
+                    residue_id = residue.get_id()
                     atoms_data.append({
                         "name": atom.get_name(),
                         "element": getattr(atom, "element", "") or "",   # mmCIF/PDB both supported
@@ -59,6 +60,9 @@ def unpack_pdb_file(struct_path: str) -> Tuple[Any, List[Dict]]:
                         "residue": resname,
                         "residue_number": resnum,
                         "chain": chain_id,
+                        "insertion_code": str(residue_id[2] or "").strip(),
+                        "hetero_flag": str(residue_id[0] or "").strip(),
+                        "model_id": model.id,
                     })
 
     return structure, atoms_data

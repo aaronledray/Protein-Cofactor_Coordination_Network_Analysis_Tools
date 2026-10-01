@@ -827,6 +827,7 @@ def generate_coordination_csv_with_moieties(
     structure,
     bond_lookup: Dict,
     output_dir: Optional[str] = None,
+    first_model_only: bool = False,
 ) -> None:
     """
     Generate a CSV summarizing the PCS and SCS residue names, chemical moieties, and interactors.
@@ -961,7 +962,10 @@ def generate_coordination_csv_with_moieties(
         for a in cofactor_sphere:
             res_category[_rkey(a["residue"], a["residue_number"], a["chain"])] = "Cofactor"
 
-        for model in structure:
+        models = list(structure)
+        if first_model_only:
+            models = models[:1]
+        for model in models:
             for chain in model:
                 chain_id = chain.get_id()
                 for residue in chain:
@@ -1163,11 +1167,14 @@ _PREFERRED_BY_MOIETY: Dict[str, List[str]] = {
 # Utilities / pretty logging
 # -----------------------------
 def _bioatom_to_dict(residue, atom, chain_id: str) -> AtomDict:
+    residue_id = residue.get_id()
     return {
         "name": atom.get_name(),
         "residue": residue.get_resname(),
-        "residue_number": residue.get_id()[1],
+        "residue_number": residue_id[1],
         "chain": chain_id,
+        "insertion_code": str(residue_id[2] or "").strip(),
+        "hetero_flag": str(residue_id[0] or "").strip(),
         "element": getattr(atom, "element", ""),
         "coordinates": np.array(atom.coord, dtype=float),
     }
@@ -1275,15 +1282,16 @@ def _expand_by_moiety_and_backbone_with_logging(
     seed_atoms: List[AtomDict],
     structure,
     exclude_moieties: Optional[List[str]] = None,
+    models=None,
 ) -> List[AtomDict]:
     if exclude_moieties is None:
         exclude_moieties = []
     exclude_set = {m.lower() for m in exclude_moieties}
 
     # index seeds per residue + gather their moiety set
-    seeds_by_res: Dict[Tuple[str, int, str], Dict[str, Set[str]]] = defaultdict(lambda: {"moieties": set(), "seed_names": set()})
+    seeds_by_res: Dict[Tuple[str, object, str, str, str], Dict[str, Set[str]]] = defaultdict(lambda: {"moieties": set(), "seed_names": set()})
     for a in seed_atoms:
-        rk = (str(a["residue"]), int(a["residue_number"]), str(a["chain"]))
+        rk = _identity_rkey(a)
         seeds_by_res[rk]["seed_names"].add(str(a["name"]))
         m = _get_moiety_label(str(a["residue"]), str(a["name"]))
         if m and m.lower() not in exclude_set:
@@ -1291,16 +1299,24 @@ def _expand_by_moiety_and_backbone_with_logging(
 
     expanded: Dict[Tuple[str, int, str, str], AtomDict] = {}
     for a in seed_atoms:
-        k = (str(a["residue"]), int(a["residue_number"]), str(a["chain"]), str(a["name"]))
+        k = (*_identity_rkey(a), str(a["name"]))
         expanded[k] = a
 
-    for model in structure:
+    models = structure if models is None else models
+    for model in models:
         for chain in model:
             chain_id = chain.id
             for residue in chain:
                 resname = residue.get_resname()
                 resnum = residue.get_id()[1]
-                rk = (resname, resnum, chain_id)
+                residue_id = residue.get_id()
+                rk = (
+                    resname,
+                    resnum,
+                    chain_id,
+                    str(residue_id[2] or ""),
+                    str(residue_id[0] or ""),
+                )
                 if rk not in seeds_by_res:
                     continue
 
@@ -1314,7 +1330,7 @@ def _expand_by_moiety_and_backbone_with_logging(
                     for atom in all_atoms:
                         m = _get_moiety_label(resname, str(atom["name"]))
                         if m in moieties:
-                            key = (resname, resnum, chain_id, str(atom["name"]))
+                            key = (*_identity_rkey(atom), str(atom["name"]))
                             if key not in expanded:
                                 expanded[key] = atom
                                 if atom["name"] not in seed_names:
@@ -1384,16 +1400,28 @@ def _expand_by_moiety_and_backbone_with_logging(
 
 
 # -- Keys and utilities
-def _akey(a: AtomDict) -> Tuple[str, int, str, str]:
-    return (str(a["residue"]), int(a["residue_number"]), str(a["chain"]), str(a["name"]))
+def _identity_rkey(a: AtomDict) -> Tuple[str, object, str, str, str]:
+    """Full residue identity, including insertion code and hetero flag."""
+    return (
+        str(a["residue"]),
+        a["residue_number"],
+        str(a["chain"]),
+        str(a.get("insertion_code", "") or "").strip(),
+        str(a.get("hetero_flag", "") or "").strip(),
+    )
 
-def _rkey(a: AtomDict) -> Tuple[str, int, str]:
-    return (str(a["residue"]), int(a["residue_number"]), str(a["chain"]))
 
-def _mk(a: AtomDict) -> Tuple[str, int, str, str]:
-    """(resname, resnum, chain, moiety)"""
+def _akey(a: AtomDict) -> Tuple[str, object, str, str, str, str]:
+    return (*_identity_rkey(a), str(a["name"]))
+
+def _rkey(a: AtomDict) -> Tuple[str, object, str]:
+    """Legacy display/grouping key retained for compatibility."""
+    return (str(a["residue"]), a["residue_number"], str(a["chain"]))
+
+def _mk(a: AtomDict) -> Tuple[str, object, str, str, str, str]:
+    """Full residue identity plus moiety label."""
     res = str(a["residue"])
-    return (res, int(a["residue_number"]), str(a["chain"]), _get_moiety_label(res, str(a["name"])))
+    return (*_identity_rkey(a), _get_moiety_label(res, str(a["name"])))
 
 def _np_coords(atoms: List[AtomDict]) -> np.ndarray:
     return np.array([a["coordinates"] for a in atoms], dtype=float) if atoms else np.empty((0,3))
@@ -1462,7 +1490,7 @@ def _filter_seed_candidates(
         elem = str(a.get("element","")).upper()
         if elem in EXCLUDED_COORD_ELEMENTS:
             continue
-        if _rkey(a) in exclude_residue_keys:
+        if _identity_rkey(a) in exclude_residue_keys:
             continue
         if d <= max_dist_from_set:
             kept.append(a)
@@ -1497,7 +1525,8 @@ def _multi_pick_for_group(
     #     if k <= 0:
     #         continue
 
-    for (res, num, chain, moi), atoms in grouped.items():
+    for group, atoms in grouped.items():
+        res, _, _, _, _, moi = group
         k = _lookup_k(policy, res, moi, default_k)
         if k <= 0:
             continue
@@ -1568,6 +1597,7 @@ def identify_coordination_network(
     output_dir: Optional[str] = None,
     output_prefix: str = "",
     write_coord_links: bool = True,
+    first_model_only: bool = False,
 ):
     """
     SAME SIGNATURE.
@@ -1578,18 +1608,25 @@ def identify_coordination_network(
     """
     # --- Collect all atoms from structure (same as before) ---
     all_atoms: List[AtomDict] = []
-    for model in structure:
+    models = list(structure)
+    if first_model_only:
+        models = models[:1]
+    for model in models:
         for chain in model:
             chain_id = chain.id
             for residue in chain:
                 resname = residue.get_resname()
-                resnum  = residue.get_id()[1]
+                residue_id = residue.get_id()
+                resnum  = residue_id[1]
                 for atom in residue:
                     all_atoms.append({
                         "name": atom.get_name(),
                         "residue": resname,
                         "residue_number": resnum,
                         "chain": chain_id,
+                        "insertion_code": str(residue_id[2] or "").strip(),
+                        "hetero_flag": str(residue_id[0] or "").strip(),
+                        "model_id": model.id,
                         "element": getattr(atom, "element", ""),
                         "coordinates": np.array(atom.coord, dtype=float),
                     })
@@ -1608,7 +1645,7 @@ def identify_coordination_network(
     # --- PCS seeds: filter & pick (policy-aware) ---
     pcs_candidates = _filter_seed_candidates(
         atoms=[a for a in all_atoms if str(a["residue"]).upper() not in cof_resnames],
-        exclude_residue_keys={_rkey(a) for a in cofactor_sphere},
+        exclude_residue_keys={_identity_rkey(a) for a in cofactor_sphere},
         max_dist_from_set=distance_cutoff,
         reference_set_coords=cof_coords,
     )
@@ -1629,7 +1666,7 @@ def identify_coordination_network(
     pcs_coords = _np_coords(pcs_seed)
     scs_candidates = _filter_seed_candidates(
         atoms=[a for a in all_atoms if str(a["residue"]).upper() not in cof_resnames],
-        exclude_residue_keys=({_rkey(a) for a in cofactor_sphere} | {_rkey(a) for a in pcs_seed}),
+        exclude_residue_keys=({_identity_rkey(a) for a in cofactor_sphere} | {_identity_rkey(a) for a in pcs_seed}),
         max_dist_from_set=distance_cutoff,             # SCS threshold is to PCS seed set
         reference_set_coords=pcs_coords,
     )
@@ -1672,8 +1709,8 @@ def identify_coordination_network(
 
     # --- Expansion as before (can include carbons etc.) ---
     if expand_residues:
-        pcs_atoms = _expand_by_moiety_and_backbone_with_logging(pcs_seed, structure, exclude_moieties=exclude_moieties)
-        scs_atoms = _expand_by_moiety_and_backbone_with_logging(scs_seed, structure, exclude_moieties=exclude_moieties)
+        pcs_atoms = _expand_by_moiety_and_backbone_with_logging(pcs_seed, structure, exclude_moieties=exclude_moieties, models=models)
+        scs_atoms = _expand_by_moiety_and_backbone_with_logging(scs_seed, structure, exclude_moieties=exclude_moieties, models=models)
     else:
         pcs_atoms, scs_atoms = pcs_seed, scs_seed
 

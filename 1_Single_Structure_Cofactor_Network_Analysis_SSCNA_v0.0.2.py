@@ -339,6 +339,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     comb_cutoff = params["combinatorial_cofactor_cutoff"]
     exclude_moieties = params["exclude_moieties"] or []
     no_plots = bool(params.get("no_plots", False))
+    first_model_only = bool(params.get("first_model_only", False))
     output_dir = os.path.join(os.getcwd(), "SSCNA_output")
     os.makedirs(output_dir, exist_ok=True)
     file_prefix = f"{tpl_basename}_"
@@ -374,6 +375,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         exclude_moieties=exclude_moieties,
         output_dir=output_dir,
         output_prefix=file_prefix,
+        first_model_only=first_model_only,
     )
 
 
@@ -399,6 +401,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         structure=structure,
         bond_lookup=bond_lookup,
         output_dir=output_dir,
+        first_model_only=first_model_only,
     )
 
     write_coord_breakdown_v2(
@@ -408,6 +411,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         scs_atoms=scs_atoms,
         moiety_lookup=chemical_moieties,
         output_csv_path=os.path.join(output_dir, f"{file_prefix}Coord_Breakdown_atoms.csv"),
+        first_model_only=first_model_only,
     )
 
     if not no_plots:
@@ -504,6 +508,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--exclude-moieties", help="Comma-separated moieties to exclude")
     p.add_argument("--mode", choices=["Coord_Network", "Residues_of_Interest"], help="Run mode")
     p.add_argument("--no-plots", action="store_true", help="Skip PNG and HTML rendering")
+    p.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
     p.add_argument("--verbose", action="store_true", help="Show informational progress logs")
     p.add_argument("--interactive", action="store_true", help="Force interactive prompting")
     return p.parse_args()
@@ -533,6 +538,8 @@ def main():
         cli_params["mode"] = args.mode
     if args.no_plots:
         cli_params["no_plots"] = True
+    if args.first_model:
+        cli_params["first_model_only"] = True
 
     if args.expand_residues and not args.no_expand_residues:
         cli_params["expand_residues"] = True

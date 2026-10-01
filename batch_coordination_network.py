@@ -16,6 +16,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cofactor2", help="Second cofactor residue names, comma-separated")
     parser.add_argument("--distance", type=float, default=3.6)
     parser.add_argument("--expand-residues", action="store_true")
+    parser.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
     parser.add_argument("--combinatorial", action="store_true")
     parser.add_argument("--combinatorial-cutoff", type=float, default=20.0)
     parser.add_argument("--exclude-moieties", default="alanine_sidechain")
@@ -34,6 +35,7 @@ def main() -> int:
         workers=args.workers,
         distance_cutoff=args.distance,
         expand_residues=args.expand_residues,
+        first_model_only=args.first_model,
         combinatorial=args.combinatorial,
         combinatorial_cofactor_cutoff=args.combinatorial_cutoff,
         cofactor_resname2=args.cofactor2,

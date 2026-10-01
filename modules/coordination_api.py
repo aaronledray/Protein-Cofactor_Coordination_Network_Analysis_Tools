@@ -158,6 +158,7 @@ def analyze_structure(
     combinatorial_cofactor_cutoff: float = 20.0,
     cofactor_resname2: Optional[Union[str, Sequence[str]]] = None,
     exclude_moieties: Optional[Sequence[str]] = None,
+    first_model_only: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Analyze one structure without creating files or plots.
 
@@ -192,6 +193,7 @@ def analyze_structure(
         output_dir=None,
         output_prefix="",
         write_coord_links=False,
+        first_model_only=first_model_only,
     )
 
     link_rows = _coord_link_rows(cofactor_atoms, pcs_atoms, scs_atoms)
