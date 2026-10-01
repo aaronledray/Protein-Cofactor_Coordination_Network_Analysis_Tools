@@ -7,6 +7,7 @@ Currently exposes:
 """
 
 from typing import List, Optional
+import logging
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -26,6 +27,8 @@ import plotly.graph_objects as go
 
 # pull bond builders from structure_processing
 from .structure_processing import generate_all_bonds, generate_residue_bonds
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -123,7 +126,7 @@ def plot_evaluation_results(
     # Optional CSV
     if output_csv:
         df_results.to_csv(output_csv, index=False)
-        print(f"Results written to {output_csv}")
+        logger.info("Results written to %s", output_csv)
 
 
 
@@ -252,7 +255,7 @@ def static_plots_2d(
     ax1.legend()
     plt.tight_layout()
     out1 = f"{output_prefix}static_pcs_scs_mode_both.png" if focused_bonds else f"{output_prefix}static_pcs_scs_mode.png"
-    plt.savefig(out1); print(f"Saved PCS/SCS plot → {out1}")
+    plt.savefig(out1); logger.info("Saved PCS/SCS plot → %s", out1)
     plt.show()
 
     # === Plot 2: Element-Based Coloring ===
@@ -290,7 +293,7 @@ def static_plots_2d(
     ax2.set_xlabel("X Coordinate"); ax2.set_ylabel("Y Coordinate"); ax2.set_zlabel("Z Coordinate")
     plt.tight_layout()
     out2 = f"{output_prefix}static_element_coloring_mode_both.png" if focused_bonds else f"{output_prefix}static_element_coloring_mode.png"
-    plt.savefig(out2); print(f"Saved Element plot → {out2}")
+    plt.savefig(out2); logger.info("Saved Element plot → %s", out2)
     plt.show()
 
 
@@ -466,7 +469,7 @@ def plot_interactive_modes_with_network(
             continue
         link_segments.append((s[0],s[1],s[2], d[0],d[1],d[2], r.get("link_type","link")))
     if missing:
-        print(f"[INFO] Link rendering: {missing} links skipped (atoms not present in current marker set).")
+        logger.info("Link rendering: %d links skipped (atoms not present in current marker set).", missing)
 
     # ------------------------ Figure & traces ------------------------
     fig = go.Figure()
@@ -600,7 +603,7 @@ def plot_interactive_modes_with_network(
     )
 
     fig.write_html(output_filename)
-    print(f"Interactive plot saved as '{output_filename}'")
+    logger.info("Interactive plot saved as '%s'", output_filename)
     fig.show()
 
 
@@ -1340,7 +1343,7 @@ def plot_interactive_modes_with_roi(
     )
 
     fig.write_html(output_filename)
-    print(f"Interactive plot saved as '{output_filename}'")
+    logger.info("Interactive plot saved as '%s'", output_filename)
     fig.show()
 
 
@@ -1508,8 +1511,7 @@ def plot_template_heatmap_interactive(
     )
 
     fig.write_html("1_conserved_interactive_modes_with_bonds.html")
-    print("Interactive plot saved as '1_conserved_interactive_modes_with_bonds.html'")
+    logger.info("Interactive plot saved as '1_conserved_interactive_modes_with_bonds.html'")
     fig.show()
-
 
 

@@ -133,6 +133,9 @@ Run the regression and validation suite with:
 python -m unittest discover -s tests -v
 ```
 
+Measured chemistry checks and headless timings are summarized in
+[`docs/validation.md`](docs/validation.md).
+
 ## Repository layout
 
 ```text

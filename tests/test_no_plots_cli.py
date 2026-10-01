@@ -20,7 +20,7 @@ class NoPlotsCliTests(unittest.TestCase):
             env = os.environ.copy()
             env["MPLCONFIGDIR"] = str(Path(work_dir) / "mpl-cache")
             env["XDG_CACHE_HOME"] = str(Path(work_dir) / "cache")
-            subprocess.run(
+            completed = subprocess.run(
                 [
                     sys.executable,
                     str(SSCNA),
@@ -42,6 +42,8 @@ class NoPlotsCliTests(unittest.TestCase):
                 capture_output=True,
                 text=True,
             )
+
+            self.assertEqual(completed.stdout, "")
 
             output_dir = Path(work_dir) / "SSCNA_output"
             actual_breakdown = output_dir / "1ag6.cif_Coord_Breakdown.csv"

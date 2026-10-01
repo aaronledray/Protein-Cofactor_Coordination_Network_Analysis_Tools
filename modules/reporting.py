@@ -145,8 +145,11 @@
 
 from typing import List, Dict, Any, Tuple, Iterable, Optional
 import csv
+import logging
 import os
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 def _as_key(a: Dict[str, Any]) -> Tuple[str, str, str]:
     """Unique atom key as (chain, residue_number(str), atom_name). Robust for PDB/mmCIF."""
@@ -298,4 +301,4 @@ def write_coord_breakdown_v2(
         writer.writerow(header)
         writer.writerows(rows)
 
-    print(f"[INFO] Wrote {len(rows)} rows to '{output_csv_path}'")
+    logger.info("Wrote %d rows to '%s'", len(rows), output_csv_path)
