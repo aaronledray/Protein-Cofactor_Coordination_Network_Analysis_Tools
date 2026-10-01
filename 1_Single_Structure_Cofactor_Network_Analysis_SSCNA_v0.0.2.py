@@ -55,6 +55,7 @@ import os
 import sys
 import json
 import argparse
+import logging
 from typing import List, Dict, Any, Optional
 
 # Optional YAML support
@@ -94,6 +95,9 @@ from modules.reporting import write_coord_breakdown_v2
 
 
 from modules.moieties import bond_lookup, atom_type_colors, chemical_moieties
+
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -232,13 +236,13 @@ def load_sidecar_config(template_path: str) -> Dict[str, Any]:
             with open(yaml_path, "r") as f:
                 return yaml.safe_load(f) or {}
         except Exception as e:
-            print(f"[WARN] Could not parse {yaml_path}: {e}")
+            logger.warning("Could not parse %s: %s", yaml_path, e)
     if os.path.isfile(json_path):
         try:
             with open(json_path, "r") as f:
                 return json.load(f) or {}
         except Exception as e:
-            print(f"[WARN] Could not parse {json_path}: {e}")
+            logger.warning("Could not parse %s: %s", json_path, e)
     return {}
 
 def prompt_interactive(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -277,7 +281,7 @@ def prompt_interactive(params: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 params[key] = float(raw)
             except ValueError:
-                print(f"[WARN] Invalid number for {label}; keeping {cur}")
+                logger.warning("Invalid number for %s; keeping %s", label, cur)
 
     ask_float("distance_cutoff", "Distance cutoff (Å)", DEFAULTS["distance_cutoff"])
     ask_float("combinatorial_cofactor_cutoff", "Combinatorial cofactor cutoff (Å)", DEFAULTS["combinatorial_cofactor_cutoff"])
@@ -307,7 +311,7 @@ def prompt_interactive(params: Dict[str, Any]) -> Dict[str, Any]:
             try:
                 params["residues_of_interest_integers"] = [int(x) for x in raw.split(",")]
             except Exception:
-                print("[WARN] Invalid ROI list; using defaults")
+                logger.warning("Invalid ROI list; using defaults")
                 params["residues_of_interest_integers"] = DEFAULTS["residues_of_interest_integers"]
         else:
             params["residues_of_interest_integers"] = DEFAULTS["residues_of_interest_integers"]
@@ -344,11 +348,14 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     if cofactor2 and isinstance(cofactor2, str):
         cofactor2 = [cofactor2]
 
-    print(f"[INFO] Loading structure: {tpl}")
+    logger.info("Loading structure: %s", tpl)
     structure, atoms_data = unpack_pdb_file(tpl)
 
-    print(f"[INFO] Identifying coordination network for {cofactor1}"
-          + (f" with cofactor2 {cofactor2}" if cofactor2 else ""))
+    logger.info(
+        "Identifying coordination network for %s%s",
+        cofactor1,
+        f" with cofactor2 {cofactor2}" if cofactor2 else "",
+    )
 
 
 
@@ -383,7 +390,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     scs_template_coords      = [a['coordinates'] for a in scs_atoms]
 
     # CSV report
-    print("[INFO] Writing CSV breakdown...")
+    logger.info("Writing CSV breakdown...")
     generate_coordination_csv_with_moieties(
         cofactor_sphere=cofactor_sphere,
         pcs_residues=pcs_atoms,
@@ -405,7 +412,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
 
     if not no_plots:
         # Static plots
-        print("[INFO] Rendering static plots...")
+        logger.info("Rendering static plots...")
         static_plots_2d(
             cofactor_coords=cofactor_template_coords,
             pcs_coords=pcs_template_coords,
@@ -423,7 +430,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
         )
 
         # Interactive plot
-        print("[INFO] Rendering interactive Plotly graph...")
+        logger.info("Rendering interactive Plotly graph...")
         plot_interactive_modes_with_network(
             structure=structure,
             cofactor_atoms=cofactor_sphere,
@@ -437,7 +444,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             links_csv_path=os.path.join(output_dir, f"{file_prefix}Coord_Links.csv"),
         )
 
-    print("[DONE] Coord_Network complete.")
+    logger.info("Coord_Network complete.")
 
 def run_roi(params: Dict[str, Any]) -> None:
     tpl = params["template_pdb_file"]
@@ -453,10 +460,10 @@ def run_roi(params: Dict[str, Any]) -> None:
 
     roi_integers = params.get("residues_of_interest_integers") or DEFAULTS["residues_of_interest_integers"]
 
-    print(f"[INFO] Loading structure: {tpl}")
+    logger.info("Loading structure: %s", tpl)
     structure, atoms_data = unpack_pdb_file(tpl)
 
-    print(f"[INFO] Identifying ROI with cofactor {cofactor_for_roi}...")
+    logger.info("Identifying ROI with cofactor %s...", cofactor_for_roi)
     cofactor_atoms, roi_atoms = identify_residues_of_interest(
         structure=structure,
         cofactor_resname=cofactor_for_roi,
@@ -467,9 +474,9 @@ def run_roi(params: Dict[str, Any]) -> None:
         residues_of_interest_integers=roi_integers
     )
 
-    print(f"[INFO] Cofactor atoms: {len(cofactor_atoms)} | ROI atoms: {len(roi_atoms)}")
+    logger.info("Cofactor atoms: %d | ROI atoms: %d", len(cofactor_atoms), len(roi_atoms))
 
-    print("[INFO] Rendering interactive Plotly (ROI)...")
+    logger.info("Rendering interactive Plotly (ROI)...")
     plot_interactive_modes_with_roi(
         structure=structure,
         cofactor_atoms=cofactor_atoms,
@@ -481,7 +488,7 @@ def run_roi(params: Dict[str, Any]) -> None:
         output_filename=os.path.join(output_dir, f"{tpl_basename}_roi_coordination_network.html")
     )
 
-    print("[DONE] Residues_of_Interest complete.")
+    logger.info("Residues_of_Interest complete.")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="SSCNA — Single Structure Cofactor Network Analysis")
@@ -497,11 +504,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--exclude-moieties", help="Comma-separated moieties to exclude")
     p.add_argument("--mode", choices=["Coord_Network", "Residues_of_Interest"], help="Run mode")
     p.add_argument("--no-plots", action="store_true", help="Skip PNG and HTML rendering")
+    p.add_argument("--verbose", action="store_true", help="Show informational progress logs")
     p.add_argument("--interactive", action="store_true", help="Force interactive prompting")
     return p.parse_args()
 
 def main():
     args = parse_args()
+    logging.basicConfig(
+        level=logging.INFO if args.verbose else logging.WARNING,
+        format="[%(levelname)s] %(message)s",
+    )
 
     # Build params from CLI
     cli_params: Dict[str, Any] = {}

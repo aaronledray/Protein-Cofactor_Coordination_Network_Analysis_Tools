@@ -19,6 +19,7 @@ from typing import List, Dict, Tuple, Union
 from .structure_utils import find_cofactor_atoms
 
 import csv
+import logging
 import os
 from typing import Dict, List, Tuple, Iterable, Set, Optional
 from collections import defaultdict, namedtuple
@@ -35,6 +36,8 @@ import numpy as np
 
 # Types
 AtomDict = Dict[str, object]  # keys: name,residue,residue_number,chain,element,coordinates
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -84,18 +87,20 @@ def _nearest_idx_and_dist(pt: np.ndarray, cloud: np.ndarray) -> Tuple[int, float
 
 
 
-def _write_coord_links_csv(
-    path: str,
+COORD_LINK_COLUMNS = [
+    "link_type",
+    "src_resname", "src_resnum", "src_chain", "src_atom", "src_moiety",
+    "dst_resname", "dst_resnum", "dst_chain", "dst_atom", "dst_moiety",
+    "distance_A",
+]
+
+
+def _coord_link_rows(
     cofactor_atoms: List[AtomDict],
     pcs_seed_atoms: List[AtomDict],
     scs_seed_atoms: List[AtomDict],
-) -> int:
-    """
-    Write link rows:
-      - cofactor->pcs : for each PCS seed, link to its nearest cofactor atom
-      - pcs->scs      : for each SCS seed,  link to its nearest *PCS seed* atom
-    Returns number of rows written.
-    """
+) -> List[Dict[str, object]]:
+    """Build the legacy cofactor→PCS and PCS→SCS edge rows in stable order."""
     rows = []
 
     # 1) Cofactor -> PCS
@@ -126,25 +131,37 @@ def _write_coord_links_csv(
             "distance_A": f"{dist:.3f}",
         })
 
+    return rows
+
+
+def _write_coord_links_csv(
+    path: str,
+    cofactor_atoms: List[AtomDict],
+    pcs_seed_atoms: List[AtomDict],
+    scs_seed_atoms: List[AtomDict],
+) -> int:
+    """
+    Write link rows:
+      - cofactor->pcs : for each PCS seed, link to its nearest cofactor atom
+      - pcs->scs      : for each SCS seed,  link to its nearest *PCS seed* atom
+    Returns number of rows written.
+    """
+    rows = _coord_link_rows(cofactor_atoms, pcs_seed_atoms, scs_seed_atoms)
+
     if not rows:
         # still create an empty file with header to make behavior predictable
-        header = ["link_type",
-                  "src_resname","src_resnum","src_chain","src_atom","src_moiety",
-                  "dst_resname","dst_resnum","dst_chain","dst_atom","dst_moiety",
-                  "distance_A"]
         with open(path, "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=header)
+            w = csv.DictWriter(f, fieldnames=COORD_LINK_COLUMNS)
             w.writeheader()
-        print(f"[INFO] Coord links: wrote 0 links to '{path}'")
+        logger.info("Coord links: wrote 0 links to '%s'", path)
         return 0
 
-    header = list(rows[0].keys())
     with open(path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=header)
+        w = csv.DictWriter(f, fieldnames=COORD_LINK_COLUMNS)
         w.writeheader()
         w.writerows(rows)
 
-    print(f"[INFO] Coord links: wrote {len(rows)} links to '{path}'")
+    logger.info("Coord links: wrote %d links to '%s'", len(rows), path)
     return len(rows)
 
 
@@ -964,7 +981,7 @@ def generate_coordination_csv_with_moieties(
                             x, y, z
                         ])
 
-    print(f"[INFO] Coordination breakdown written to: {output_file_name}")
+    logger.info("Coordination breakdown written to: %s", output_file_name)
 
 
 
@@ -1170,10 +1187,10 @@ def _group_atoms_by_residue(atoms: Iterable[AtomDict]) -> Dict[Tuple[str, int, s
 
 def _print_atom_set(label: str, atoms: Iterable[AtomDict]) -> None:
     atoms = list(atoms)
-    print(f"[INFO] {label}: {len(atoms)} atoms")
+    logger.info("%s: %d atoms", label, len(atoms))
     grouped = _group_atoms_by_residue(atoms)
     for (resname, resnum, chain), names in grouped.items():
-        print(f"[INFO]   {label} ▸ {resname} {resnum} {chain}: {', '.join(names)}")
+        logger.info("  %s ▸ %s %s %s: %s", label, resname, resnum, chain, ", ".join(names))
 
 def _dedup_atoms(atoms: Iterable[AtomDict]) -> List[AtomDict]:
     seen: Set[Tuple[str, int, str, str]] = set()
@@ -1304,11 +1321,11 @@ def _expand_by_moiety_and_backbone_with_logging(
                                     added_moiety.append(str(atom["name"]))
                     mtxt = ", ".join(sorted(moieties)) if moieties else "(all excluded)"
                     if added_moiety:
-                        print(f"[INFO] Moiety expansion: {resname} {resnum} {chain_id} | moieties=[{mtxt}] → added: {', '.join(sorted(set(added_moiety)))}")
+                        logger.info("Moiety expansion: %s %s %s | moieties=[%s] → added: %s", resname, resnum, chain_id, mtxt, ", ".join(sorted(set(added_moiety))))
                     else:
-                        print(f"[INFO] Moiety expansion: {resname} {resnum} {chain_id} | moieties=[{mtxt}] → added: (none)")
+                        logger.info("Moiety expansion: %s %s %s | moieties=[%s] → added: (none)", resname, resnum, chain_id, mtxt)
                 else:
-                    print(f"[INFO] Moiety expansion: {resname} {resnum} {chain_id} → no moiety labels (or all excluded); no moiety additions")
+                    logger.info("Moiety expansion: %s %s %s → no moiety labels (or all excluded); no moiety additions", resname, resnum, chain_id)
 
                 # (2) Backbone expansion
                 added_backbone: List[str] = []
@@ -1320,9 +1337,9 @@ def _expand_by_moiety_and_backbone_with_logging(
                             if atom["name"] not in seed_names:
                                 added_backbone.append(str(atom["name"]))
                 if added_backbone:
-                    print(f"[INFO] Backbone expansion: {resname} {resnum} {chain_id} → added backbone: {', '.join(sorted(set(added_backbone)))}")
+                    logger.info("Backbone expansion: %s %s %s → added backbone: %s", resname, resnum, chain_id, ", ".join(sorted(set(added_backbone))))
                 else:
-                    print(f"[INFO] Backbone expansion: {resname} {resnum} {chain_id} → added backbone: (none)")
+                    logger.info("Backbone expansion: %s %s %s → added backbone: (none)", resname, resnum, chain_id)
 
     return list(expanded.values())
 
@@ -1550,6 +1567,7 @@ def identify_coordination_network(
     exclude_moieties: Optional[List[str]] = None,
     output_dir: Optional[str] = None,
     output_prefix: str = "",
+    write_coord_links: bool = True,
 ):
     """
     SAME SIGNATURE.
@@ -1583,9 +1601,9 @@ def identify_coordination_network(
     cofactor_sphere = [a for a in all_atoms if str(a["residue"]).upper() in cof_resnames]
     cof_coords = _np_coords(cofactor_sphere)
 
-    print(f"[INFO] Cofactor (identified): {len(cofactor_sphere)} atoms")
+    logger.info("Cofactor (identified): %d atoms", len(cofactor_sphere))
     for a in cofactor_sphere:
-        print(f"[INFO]   Cofactor ▸ {a['residue']} {a['residue_number']} {a['chain']}: {a['name']}")
+        logger.info("  Cofactor ▸ %s %s %s: %s", a['residue'], a['residue_number'], a['chain'], a['name'])
 
     # --- PCS seeds: filter & pick (policy-aware) ---
     pcs_candidates = _filter_seed_candidates(
@@ -1601,11 +1619,11 @@ def identify_coordination_network(
         default_k=1,
     )
 
-    print(f"[INFO] PCS seeds (policy-applied): {len(pcs_seed)} atoms")
+    logger.info("PCS seeds (policy-applied): %d atoms", len(pcs_seed))
     pcs_by_res = defaultdict(list)
     for a in pcs_seed: pcs_by_res[_rkey(a)].append(a["name"])
     for (res, num, ch), names in sorted(pcs_by_res.items()):
-        print(f"[INFO]   PCS seed ▸ {res} {num} {ch}: {', '.join(sorted(names))}")
+        logger.info("  PCS seed ▸ %s %s %s: %s", res, num, ch, ", ".join(sorted(names)))
 
     # --- SCS seeds: filter & pick (policy-aware) against PCS; exclude cofactor+PCS residues ---
     pcs_coords = _np_coords(pcs_seed)
@@ -1625,28 +1643,30 @@ def identify_coordination_network(
 
 
 
-    print(f"[INFO] SCS seeds (policy-applied): {len(scs_seed)} atoms")
+    logger.info("SCS seeds (policy-applied): %d atoms", len(scs_seed))
     scs_by_res = defaultdict(list)
     for a in scs_seed: scs_by_res[_rkey(a)].append(a["name"])
     for (res, num, ch), names in sorted(scs_by_res.items()):
-        print(f"[INFO]   SCS seed ▸ {res} {num} {ch}: {', '.join(sorted(names))}")
+        logger.info("  SCS seed ▸ %s %s %s: %s", res, num, ch, ", ".join(sorted(names)))
 
 
 
 
-    # After pcs_seed and scs_seed are known
-    out_dir = output_dir or "."
-    os.makedirs(out_dir, exist_ok=True)
-    link_path = os.path.join(out_dir, f"{output_prefix}Coord_Links.csv")
-    try:
-        _write_coord_links_csv(
-            link_path,          # <-- positional instead of path="..."
-            cofactor_atoms=cofactor_sphere,
-            pcs_seed_atoms=pcs_seed,
-            scs_seed_atoms=scs_seed,
-        )
-    except Exception as e:
-        print(f"[WARNING] Failed to write Coord_Links.csv ({link_path}): {e}")
+    # After pcs_seed and scs_seed are known. The default preserves the legacy
+    # side effect; library callers can disable it when they only need tables.
+    if write_coord_links:
+        out_dir = output_dir or "."
+        os.makedirs(out_dir, exist_ok=True)
+        link_path = os.path.join(out_dir, f"{output_prefix}Coord_Links.csv")
+        try:
+            _write_coord_links_csv(
+                link_path,          # <-- positional instead of path="..."
+                cofactor_atoms=cofactor_sphere,
+                pcs_seed_atoms=pcs_seed,
+                scs_seed_atoms=scs_seed,
+            )
+        except Exception as e:
+            logger.warning("Failed to write Coord_Links.csv (%s): %s", link_path, e)
 
 
 
@@ -1657,8 +1677,8 @@ def identify_coordination_network(
     else:
         pcs_atoms, scs_atoms = pcs_seed, scs_seed
 
-    print(f"[INFO] PCS (final): {len(pcs_atoms)} atoms")
-    print(f"[INFO] SCS (final): {len(scs_atoms)} atoms")
+    logger.info("PCS (final): %d atoms", len(pcs_atoms))
+    logger.info("SCS (final): %d atoms", len(scs_atoms))
 
     return cofactor_sphere, pcs_atoms, scs_atoms
 
