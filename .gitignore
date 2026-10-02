@@ -3,6 +3,11 @@ candidate_designs/
 matches/
 SSCNA_output/
 coordination_batch_output/
+network_comparison_output/
+network_profile_output/
+protein_wire_output/
+substrate_seed_output/
+benchmark_output/
 
 
 # OS:
