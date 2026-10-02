@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "coordination-network-identifier"
-version = "0.1.0"
+version = "0.2.0"
 description = "Identify protein coordination networks around cofactors."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -23,4 +23,17 @@ dev = ["pytest>=8.0"]
 
 [tool.setuptools]
 packages = ["modules"]
-py-modules = ["batch_coordination_network"]
+py-modules = [
+  "batch_coordination_network",
+  "compare_coordination_networks",
+  "sscna_cli",
+]
+
+[tool.setuptools.data-files]
+"share/coordination-network-identifier" = [
+  "1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py",
+]
+
+[project.scripts]
+sscna = "sscna_cli:main"
+compare-coordination-networks = "compare_coordination_networks:main"
