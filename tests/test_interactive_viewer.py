@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from tempfile import TemporaryDirectory
+import re
 import unittest
 import json
 
@@ -9,6 +10,16 @@ from modules.coordination_api import analyze_structure
 from modules.io_utils import unpack_pdb_file
 from modules.moieties import bond_lookup
 from modules.plotting import plot_interactive_cohesive_network
+
+
+def read_html(path):
+    """Read viewer HTML with JSON \\uXXXX escapes decoded.
+
+    Newer plotly versions escape non-ASCII characters (Å, –, ·) in the embedded
+    figure JSON, older ones write them literally; the viewer is the same.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    return re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +55,7 @@ class InteractiveViewerTests(unittest.TestCase):
                 output_filename=str(output),
             )
 
-            html = output.read_text(encoding="utf-8")
+            html = read_html(output)
             self.assertIn("Full protein", html)
             self.assertIn("Coordination Network atoms", html)
             self.assertIn("Active-site context", html)
@@ -138,7 +149,7 @@ class InteractiveViewerTests(unittest.TestCase):
                 output_filename=str(output),
             )
 
-            html = output.read_text(encoding="utf-8")
+            html = read_html(output)
             self.assertIn("HEM 154:FE", html)
             self.assertNotIn("HEM 154:C1A", html)
             self.assertIn("OXY 157:O1", html)
