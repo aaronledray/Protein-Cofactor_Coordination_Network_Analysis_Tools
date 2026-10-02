@@ -40,7 +40,7 @@ Config discovery (optional; overrides defaults, can be overridden by CLI):
 Outputs:
 - "<template>_Coord_Breakdown.csv"
 - "1_static_*" PNG images
-- "1_template_coordination_network.html"
+- "<template>_coordination_network.html"
 
 
 
@@ -85,6 +85,7 @@ from modules.analysis import (
 from modules.plotting import (
     static_plots_2d,
     plot_interactive_modes_with_network,
+    plot_interactive_cohesive_network,
     plot_interactive_modes_with_roi,
     plot_template_heatmap_interactive,  # available for later
 )
@@ -95,6 +96,7 @@ from modules.reporting import write_coord_breakdown_v2
 
 
 from modules.moieties import bond_lookup, atom_type_colors, chemical_moieties
+from modules.cofactor_classes import load_cofactor_class_config, merge_cofactor_class_configs
 
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,7 @@ DEFAULTS = {
     "combinatorial_cofactor_cutoff": 20.0,
     "shells": 2,
     "site_mode": "union",
+    "site_model_mode": "pooled",
     "include_carbon_seeds": False,
     "direct_coordination": False,
     "direct_coordination_cutoff": 2.6,
@@ -341,6 +344,14 @@ def merge(a: Dict[str, Any], b: Dict[str, Any]) -> Dict[str, Any]:
     out.update({k: v for k, v in b.items() if v is not None})
     return out
 
+
+def _table_atom_groups(tables: Dict[str, Any]) -> Dict[str, List[Dict[str, Any]]]:
+    """Convert tidy API atom rows into viewer groups keyed by shell label."""
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for row in tables["atoms"].to_dict("records"):
+        groups.setdefault(str(row.get("shell", "Unknown")), []).append(row)
+    return groups
+
 # --------------------------
 # Main run
 # --------------------------
@@ -358,6 +369,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     first_model_only = bool(params.get("first_model_only", False))
     shell_count = int(params.get("shells", 2))
     site_mode = params.get("site_mode", "union")
+    site_model_mode = params.get("site_model_mode", "pooled")
     include_carbon_seeds = bool(params.get("include_carbon_seeds", False))
     direct_coordination = bool(params.get("direct_coordination", False))
     direct_coordination_cutoff = float(params.get("direct_coordination_cutoff", 2.6))
@@ -371,7 +383,13 @@ def run_coord_network(params: Dict[str, Any]) -> None:
     if cofactor2 and isinstance(cofactor2, str):
         cofactor2 = [cofactor2]
 
-    if shell_count != 2 or site_mode == "per-site" or direct_coordination or cofactor_class_cutoffs:
+    if (
+        shell_count != 2
+        or site_mode == "per-site"
+        or site_model_mode != "pooled"
+        or direct_coordination
+        or cofactor_class_cutoffs
+    ):
         from modules.coordination_api import analyze_structure
 
         tables = analyze_structure(
@@ -386,6 +404,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             first_model_only=first_model_only,
             shells=shell_count,
             site_mode=site_mode,
+            site_model_mode=site_model_mode,
             include_carbon_seeds=include_carbon_seeds,
             direct_coordination=direct_coordination,
             direct_coordination_cutoff=direct_coordination_cutoff,
@@ -403,6 +422,29 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             os.path.join(output_dir, f"{file_prefix}Coord_Links.csv"),
             index=False,
         )
+        tables["contacts"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coord_Contacts.csv"),
+            index=False,
+        )
+        if not no_plots:
+            logger.info("Rendering cohesive interactive Plotly graph...")
+            structure, _ = unpack_pdb_file(tpl)
+            shell_groups = _table_atom_groups(tables)
+            plot_interactive_cohesive_network(
+                structure=structure,
+                cofactor_atoms=shell_groups.get("Cofactor", []),
+                pcs_atoms=shell_groups.get("PCS", []),
+                scs_atoms=shell_groups.get("SCS", []),
+                focused_atoms_by_shell=shell_groups,
+                contacts=tables["contacts"],
+                bond_lookup_table=bond_lookup,
+                pdb_name=tpl_basename,
+                cofactor_resname=",".join(cofactor1),
+                atom_type_colors=atom_type_colors,
+                output_filename=os.path.join(output_dir, f"{file_prefix}coordination_network.html"),
+                first_model_only=first_model_only,
+                compact_html=bool(params.get("compact_html", False)),
+            )
         logger.info("Wrote %d-shell tidy coordination tables.", shell_count)
         return
 
@@ -491,19 +533,70 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             output_prefix=os.path.join(output_dir, f"{file_prefix}1_")
         )
 
-        # Interactive plot
-        logger.info("Rendering interactive Plotly graph...")
-        plot_interactive_modes_with_network(
+        if not params.get("cohesive_viewer"):
+            # Legacy default: original viewer and output filename.
+            logger.info("Rendering interactive Plotly graph...")
+            plot_interactive_modes_with_network(
+                structure=structure,
+                cofactor_atoms=cofactor_sphere,
+                pcs_atoms=pcs_atoms,
+                scs_atoms=scs_atoms,
+                bond_lookup_table=bond_lookup,
+                pdb_name=tpl_basename,
+                cofactor_resname=cofactor1,
+                atom_type_colors=atom_type_colors,
+                output_filename=os.path.join(output_dir, f"{file_prefix}1_template_coordination_network.html"),
+                links_csv_path=os.path.join(output_dir, f"{file_prefix}Coord_Links.csv"),
+            )
+            logger.info("Coord_Network complete.")
+            return
+
+        logger.info("Rendering interactive coordination-network Plotly graph...")
+        from modules.coordination_api import analyze_structure
+
+        viewer_tables = analyze_structure(
+            tpl,
+            cofactor1,
+            distance_cutoff=distance_cutoff,
+            expand_residues=expand_residues,
+            combinatorial=combinatorial,
+            combinatorial_cofactor_cutoff=comb_cutoff,
+            cofactor_resname2=cofactor2,
+            exclude_moieties=exclude_moieties,
+            first_model_only=first_model_only,
+            # Keep the all-in-one viewer rich enough to show the tertiary
+            # shell even when the legacy two-shell CSV path is selected.
+            shells=3,
+            site_mode="union",
+            site_model_mode=site_model_mode,
+            include_carbon_seeds=include_carbon_seeds,
+            direct_coordination=direct_coordination,
+            direct_coordination_cutoff=direct_coordination_cutoff,
+            cofactor_class_cutoffs=cofactor_class_cutoffs,
+        )
+        viewer_tables["contacts"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coord_Contacts.csv"),
+            index=False,
+        )
+        viewer_tables["atoms"].to_csv(
+            os.path.join(output_dir, f"{file_prefix}Coordination_Atoms.csv"),
+            index=False,
+        )
+        shell_groups = _table_atom_groups(viewer_tables)
+        plot_interactive_cohesive_network(
             structure=structure,
-            cofactor_atoms=cofactor_sphere,
-            pcs_atoms=pcs_atoms,
-            scs_atoms=scs_atoms,
+            cofactor_atoms=shell_groups.get("Cofactor", []),
+            pcs_atoms=shell_groups.get("PCS", []),
+            scs_atoms=shell_groups.get("SCS", []),
+            focused_atoms_by_shell=shell_groups,
+            contacts=viewer_tables["contacts"],
             bond_lookup_table=bond_lookup,
             pdb_name=tpl_basename,
-            cofactor_resname=cofactor1,
+            cofactor_resname=",".join(cofactor1),
             atom_type_colors=atom_type_colors,
-            output_filename=os.path.join(output_dir, f"{file_prefix}1_template_coordination_network.html"),
-            links_csv_path=os.path.join(output_dir, f"{file_prefix}Coord_Links.csv"),
+            output_filename=os.path.join(output_dir, f"{file_prefix}coordination_network.html"),
+            first_model_only=first_model_only,
+            compact_html=bool(params.get("compact_html", False)),
         )
 
     logger.info("Coord_Network complete.")
@@ -560,6 +653,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--distance", dest="distance_cutoff", type=float, help="Distance cutoff for moiety interactions (Å)")
     p.add_argument("--shells", type=int, help="Number of coordination shells (default: 2)")
     p.add_argument("--per-site", action="store_true", help="Analyze each cofactor site separately")
+    p.add_argument(
+        "--site-model-mode",
+        choices=["pooled", "per-model"],
+        help="Boundary policy for per-site analyses across structure models",
+    )
     p.add_argument("--expand-residues", action="store_true", help="Expand PCS/SCS to entire residues")
     p.add_argument("--no-expand-residues", action="store_true", help="Do not expand residues")
     p.add_argument("--combinatorial", action="store_true", help="Enable combinatorial mode")
@@ -568,11 +666,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--exclude-moieties", help="Comma-separated moieties to exclude")
     p.add_argument("--mode", choices=["Coord_Network", "Residues_of_Interest"], help="Run mode")
     p.add_argument("--no-plots", action="store_true", help="Skip PNG and HTML rendering")
+    show = p.add_mutually_exclusive_group()
+    show.add_argument("--show", action="store_true", help="Force showing figures/browser tabs (default: only when run from a terminal)")
+    show.add_argument("--no-show", action="store_true", help="Never open figure windows or browser tabs; files are still written")
+    p.add_argument("--cohesive-viewer", action="store_true", help="Opt in to the all-in-one interactive viewer (<structure>_coordination_network.html) and its Coord_Contacts/Coordination_Atoms CSVs")
+    p.add_argument("--compact-html", action="store_true", help="Use a CDN-backed Plotly bundle for smaller HTML output")
     p.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
     p.add_argument("--include-carbon-seeds", action="store_true", help="Allow carbon atoms to seed shells")
     p.add_argument("--direct-coordination", action="store_true", help="Annotate direct metal-ligand links in tidy output")
     p.add_argument("--direct-coordination-cutoff", type=float, default=None, help="Direct metal-ligand distance cutoff (Å)")
     p.add_argument("--cofactor-class-cutoff", action="append", help="Class-specific cutoff, e.g. metal=2.8")
+    p.add_argument(
+        "--cofactor-class-config",
+        help="YAML/JSON file defining named cofactor families and cutoff rules",
+    )
     p.add_argument("--verbose", action="store_true", help="Show informational progress logs")
     p.add_argument("--interactive", action="store_true", help="Force interactive prompting")
     return p.parse_args()
@@ -600,12 +707,22 @@ def main():
         cli_params["shells"] = args.shells
     if args.per_site:
         cli_params["site_mode"] = "per-site"
+    if args.site_model_mode:
+        cli_params["site_model_mode"] = args.site_model_mode
     if args.exclude_moieties:
         cli_params["exclude_moieties"] = str_to_list(args.exclude_moieties)
     if args.mode:
         cli_params["mode"] = args.mode
     if args.no_plots:
         cli_params["no_plots"] = True
+    if args.compact_html:
+        cli_params["compact_html"] = True
+    if args.cohesive_viewer:
+        cli_params["cohesive_viewer"] = True
+    if args.show or args.no_show:
+        from modules.display import set_show_figures
+
+        set_show_figures(bool(args.show))
     if args.first_model:
         cli_params["first_model_only"] = True
     if args.include_carbon_seeds:
@@ -616,6 +733,8 @@ def main():
         cli_params["direct_coordination_cutoff"] = args.direct_coordination_cutoff
     if args.cofactor_class_cutoff:
         cli_params["cofactor_class_cutoffs"] = parse_class_cutoffs(args.cofactor_class_cutoff)
+    if args.cofactor_class_config:
+        cli_params["cofactor_class_config_file"] = args.cofactor_class_config
 
     if args.expand_residues and not args.no_expand_residues:
         cli_params["expand_residues"] = True
@@ -637,6 +756,18 @@ def main():
 
     params = merge(DEFAULTS, sidecar)
     params = merge(params, cli_params)
+
+    class_config_sources = [
+        sidecar.get("cofactor_classes"),
+        sidecar.get("cofactor_class_rules"),
+        sidecar.get("cofactor_class_cutoffs"),
+    ]
+    if args.cofactor_class_config:
+        class_config_sources.append(load_cofactor_class_config(args.cofactor_class_config))
+    if args.cofactor_class_cutoff:
+        class_config_sources.append(parse_class_cutoffs(args.cofactor_class_cutoff))
+    if any(source for source in class_config_sources):
+        params["cofactor_class_cutoffs"] = merge_cofactor_class_configs(*class_config_sources)
 
     # If still missing critical info or --interactive, prompt
     need_prompt = args.interactive or not params.get("template_pdb_file") or not params.get("cofactor_resname")

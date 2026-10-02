@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from .display import show_matplotlib
 from .structure_io import unpack_pdb_file
 from .structure_processing import (
     make_residue_centroid_sphere,
@@ -83,7 +84,7 @@ def assess_distance_cutoff(template_residue_sphere, pdb_files,
     plt.xlabel("Distance Cutoff (Å)")
     plt.ylabel("Average Matches")
     plt.title("Effect of Distance Cutoff")
-    plt.show()
+    show_matplotlib(plt)
 
     return cutoffs, avg_matches, std_matches
 
