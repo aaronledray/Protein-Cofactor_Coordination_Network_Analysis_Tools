@@ -17,6 +17,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--distance", type=float, default=3.6)
     parser.add_argument("--shells", type=int, default=2)
     parser.add_argument("--per-site", action="store_true", help="Analyze each cofactor site separately")
+    parser.add_argument(
+        "--site-model-mode",
+        choices=["pooled", "per-model"],
+        default="pooled",
+        help="Boundary policy for per-site analyses across structure models",
+    )
     parser.add_argument("--include-carbon-seeds", action="store_true")
     parser.add_argument("--direct-coordination", action="store_true")
     parser.add_argument("--direct-coordination-cutoff", type=float, default=2.6)
@@ -48,6 +54,7 @@ def main() -> int:
         distance_cutoff=args.distance,
         shells=args.shells,
         site_mode="per-site" if args.per_site else "union",
+        site_model_mode=args.site_model_mode,
         include_carbon_seeds=args.include_carbon_seeds,
         direct_coordination=args.direct_coordination,
         direct_coordination_cutoff=args.direct_coordination_cutoff,
@@ -62,6 +69,7 @@ def main() -> int:
     result["residues"].to_csv(output_dir / "coordination_residues.csv", index=False)
     result["atoms"].to_csv(output_dir / "coordination_atoms.csv", index=False)
     result["links"].to_csv(output_dir / "coordination_links.csv", index=False)
+    result["contacts"].to_csv(output_dir / "coordination_contacts.csv", index=False)
     result["errors"].to_csv(output_dir / "coordination_errors.csv", index=False)
     print(
         f"Processed {result['residues']['structure_id'].nunique()} structure(s); "

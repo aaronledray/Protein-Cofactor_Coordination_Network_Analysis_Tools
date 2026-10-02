@@ -2133,32 +2133,39 @@ bond_lookup = {
         # Fe–S belt (typical connectivity)
         ("FE1","S1A"), ("FE1","S2A"), ("FE1","S4A"),
         ("FE2","S2A"), ("FE2","S2B"), ("FE2","S1A"),
-        ("FE3","S5A"), ("FE3","S4B"), ("FE3","S2A"),
+        ("FE3","S5A"), ("FE3","S4B"), ("FE3","S2A"), ("FE3","S4A"),
         ("FE4","S1A"), ("FE4","S3A"), ("FE4","S4A"),
         ("FE5","S4B"), ("FE5","S3A"), ("FE5","S1B"),
         ("FE6","S3B"), ("FE6","S2B"), ("FE6","S1B"),
-        ("FE7","S3B"), ("FE7","S4B"), ("FE7","S5A"),
+        ("FE7","S3B"), ("FE7","S4B"), ("FE7","S5A"), ("FE7","CX"),
         # Mo connections (support MO and MO1 label variants)
         ("MO","S4B"), ("MO","S1B"), ("MO","S3B"),
         ("MO1","S4B"), ("MO1","S1B"), ("MO1","S3B"),
+    ],
+
+    # --- Alternate Fe-S cluster (CLF) ---
+    # Connectivity taken from the explicit CONECT records in 3u7q_monomer.pdb.
+    "CLF": [
+        ("FE1", "S1"), ("FE1", "S2A"), ("FE1", "S3A"),
+        ("FE2", "S1"), ("FE2", "S2A"), ("FE2", "S4A"),
+        ("FE3", "S2A"), ("FE3", "S4A"), ("FE3", "S3A"),
+        ("FE4", "S1"), ("FE4", "S4A"), ("FE4", "S3A"),
+        ("FE5", "S1"), ("FE5", "S2B"), ("FE5", "S4B"),
+        ("FE6", "S1"), ("FE6", "S2B"), ("FE6", "S3B"),
+        ("FE7", "S2B"), ("FE7", "S3B"), ("FE7", "S4B"),
+        ("FE8", "S1"), ("FE8", "S3B"), ("FE8", "S4B"),
     ],
 
 
 
 
     # --- Homocitrate (HCA) ---
-    # Uses atom names C1–C6 and O1–O6 as in your moieties table.
-    # If your structure uses a C7/O7 label, replace the C5/C6 terminal pairs with (C7,"O5"/"O6") and add ("C3","C7").
+    # Connectivity taken from the explicit CONECT records in 3u7q_monomer.pdb.
     "HCA": [
-        # carbon backbone
-        ("C1","C2"), ("C2","C3"), ("C3","C4"), ("C4","C5"), ("C5","C6"),
-        # carboxylate at C1 (alpha)
-        ("C1","O1"), ("C1","O2"),
-        # second carboxylate at C5 (variant: sometimes annotated at C6)
-        ("C5","O3"), ("C5","O4"),
-        # terminal carboxylate at C6
-        ("C6","O5"), ("C6","O6"),
+        ("C1", "C2"), ("C2", "C3"), ("C3", "C4"),
+        ("C3", "C7"), ("C3", "O7"), ("C4", "C5"), ("C5", "C6"),
+        ("C1", "O1"), ("C1", "O2"),
+        ("C6", "O3"), ("C6", "O4"),
+        ("C7", "O5"), ("C7", "O6"),
     ],
 }
-
-

@@ -6,6 +6,7 @@ from pathlib import Path
 import unittest
 
 from modules.coordination_api import analyze_structure
+from modules.chemistry import bond_lookup
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -53,6 +54,14 @@ class ChemistryValidationTests(unittest.TestCase):
             len(result["residues"].query("shell == 'PCS' and residue_name == 'CYS'")),
             12,
         )
+
+    def test_nitrogenase_cofactor_bond_definitions_match_3u7q(self):
+        self.assertIn(("FE3", "S4A"), bond_lookup["ICS"])
+        self.assertIn(("FE7", "CX"), bond_lookup["ICS"])
+        self.assertEqual(len(bond_lookup["CLF"]), 24)
+        self.assertIn(("FE3", "S4A"), bond_lookup["CLF"])
+        self.assertIn(("C3", "C7"), bond_lookup["HCA"])
+        self.assertIn(("C3", "O7"), bond_lookup["HCA"])
 
 
 if __name__ == "__main__":

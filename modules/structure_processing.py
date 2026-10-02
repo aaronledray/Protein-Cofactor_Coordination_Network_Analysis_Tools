@@ -17,6 +17,7 @@ from typing import List, Dict, Tuple, Union
 # from .structure_utils import get_residue_atoms   # returns list[dict] for a residue
 # from .structure_utils import find_cofactor_atoms # finds atoms for given residue name(s)
 from .structure_utils import find_cofactor_atoms
+from .motif_registry import motif_for_atom
 
 import csv
 import logging
@@ -1182,6 +1183,8 @@ _BACKBONE_NAMES = {"N", "H", "CA", "HA", "C", "O", "OXT"}
 # Optional tie-breaker per moiety label (first hits are preferred)
 _PREFERRED_BY_MOIETY: Dict[str, List[str]] = {
     "thiol": ["SG", "CB"],
+    "iron_sulfur_fe": ["FE", "FE1", "FE2", "FE3", "FE4"],
+    "iron_sulfur_s": ["S", "S1", "S2", "S3", "S4"],
     "thioether": ["SD", "CG", "CE"],
     "imidazole": ["ND1", "NE2", "CG", "CE1", "CD2"],
     "COO": ["OE1", "OE2", "OD1", "OD2", "CD", "CG"],
@@ -1261,11 +1264,8 @@ def _min_dist_to_cloud(pt: np.ndarray, cloud: np.ndarray) -> float:
 
 # -- Moiety lookup
 def _get_moiety_label(resname: str, atom_name: str) -> str:
-    try:
-        from modules.moieties import chemical_moieties as _CHEM_MOIETIES  # type: ignore
-    except Exception:
-        _CHEM_MOIETIES = {}
-    return _CHEM_MOIETIES.get((resname, atom_name), "unknown_moiety")
+    label = motif_for_atom(resname, atom_name)
+    return "unknown_moiety" if label == "unknown_motif" else label
 
 
 
@@ -1438,6 +1438,11 @@ def _identity_rkey(a: AtomDict) -> Tuple[str, object, str, str, str]:
         str(a.get("insertion_code", "") or "").strip(),
         str(a.get("hetero_flag", "") or "").strip(),
     )
+
+
+def _model_identity_rkey(a: AtomDict) -> Tuple[object, str, object, str, str, str]:
+    """Residue identity including the structure model identifier."""
+    return (a.get("model_id"), *_identity_rkey(a))
 
 
 def _akey(a: AtomDict) -> Tuple[str, object, str, str, str, str]:
@@ -1837,7 +1842,7 @@ def identify_coordination_shells(
     write_coord_links: bool = True,
     first_model_only: bool = False,
     shells: int = 3,
-    cofactor_site_keys: Optional[Set[Tuple[str, object, str, str, str]]] = None,
+    cofactor_site_keys: Optional[Set[Tuple[object, ...]]] = None,
     include_link_identity: bool = False,
     include_carbon_seeds: bool = False,
 ) -> Tuple[List[AtomDict], Dict[int, List[AtomDict]], List[Dict[str, object]]]:
@@ -1877,12 +1882,21 @@ def identify_coordination_shells(
     cofactor_names = {name.upper() for name in (cofactor_resname or [])}
     if cofactor_resname2:
         cofactor_names.update(name.upper() for name in cofactor_resname2)
+    selected_site_keys = set(cofactor_site_keys or set())
+    selected_model_ids = {
+        key[0] for key in selected_site_keys if len(key) == 6
+    }
+    if selected_model_ids:
+        all_atoms = [atom for atom in all_atoms if atom.get("model_id") in selected_model_ids]
     cofactor_atoms = [
         atom for atom in all_atoms if str(atom["residue"]).upper() in cofactor_names
     ]
     if cofactor_site_keys is not None:
         cofactor_atoms = [
-            atom for atom in cofactor_atoms if _identity_rkey(atom) in cofactor_site_keys
+            atom
+            for atom in cofactor_atoms
+            if _identity_rkey(atom) in selected_site_keys
+            or _model_identity_rkey(atom) in selected_site_keys
         ]
 
     shell_atoms: Dict[int, List[AtomDict]] = {}

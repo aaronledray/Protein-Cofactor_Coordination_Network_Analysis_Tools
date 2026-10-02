@@ -62,6 +62,15 @@ except Exception:
     # Safe default if chemistry module or variable missing
     chemical_moieties = {}
 
+# Canonical residue-specific motif vocabulary.  Keep this re-export here for
+# callers that historically imported all chemistry helpers from ``moieties``.
+from .motif_registry import (  # noqa: E402
+    MOTIF_ATOM_MEMBERSHIP,
+    motif_atoms,
+    motif_for_atom,
+    motif_vocabulary,
+)
+
 # bond_lookup is optional; provide defaults if absent
 try:
     from .chemistry import bond_lookup as _bond_lookup  # type: ignore
@@ -85,4 +94,12 @@ atom_type_colors: Dict[str, str] = {
     "MO": "teal",
 }
 
-__all__ = ["chemical_moieties", "bond_lookup", "atom_type_colors"]
+__all__ = [
+    "chemical_moieties",
+    "bond_lookup",
+    "atom_type_colors",
+    "MOTIF_ATOM_MEMBERSHIP",
+    "motif_atoms",
+    "motif_for_atom",
+    "motif_vocabulary",
+]
