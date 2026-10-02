@@ -1,0 +1,13 @@
+contract_version,structure_id,site_id,model_id,cofactor_residue_name,cofactor_residue_number,cofactor_chain,residue_name,residue_number,chain,insertion_code,hetero_flag,shell,shell_depth,shells_present,is_primary,direct_coordination,coordination_role,motifs,atoms_involved,minimum_distance_A,n_contacts
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HIS,94,A,,,PCS,1,PCS,True,True,primary_coordinator,imidazole,NE2,1.9946,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HIS,96,A,,,PCS,1,PCS,True,True,primary_coordinator,imidazole,NE2,2.1033,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HIS,119,A,,,PCS,1,PCS,True,True,primary_coordinator,imidazole,ND1,1.9098,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,263,A,,W,PCS,1,PCS,True,True,primary_coordinator,water,O,2.0867,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,GLU,106,A,,,SCS,2,SCS,False,False,network_context,COO,OE1,3.4235,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,THR,199,A,,,SCS,2,SCS,False,False,network_context,hydroxyl,OG1,2.7796,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,292,A,,W,SCS,2,SCS,False,False,network_context,water,O,3.5441,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,318,A,,W,SCS,2,SCS,False,False,network_context,water,O,2.7648,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,338,A,,W,SCS,2,SCS,False,False,network_context,water,O,2.6734,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,THR,200,A,,,TCS,3,TCS,False,False,network_context,hydroxyl,OG1,2.9162,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,264,A,,W,TCS,3,TCS,False,False,network_context,water,O,2.9814,1
+1.0,1ca2,site_1_model_0,0,ZN,262,A,HOH,369,A,,W,TCS,3,TCS,False,False,network_context,water,O,2.6678,1

@@ -1,0 +1,9 @@
+contract_version,structure_id,site_id,model_id,cofactor_residue_name,cofactor_residue_number,cofactor_chain,residue_name,residue_number,chain,insertion_code,hetero_flag,shell,shell_depth,shells_present,is_primary,direct_coordination,coordination_role,motifs,atoms_involved,minimum_distance_A,n_contacts
+1.0,1ag6,site_1_model_0,0,CU,200,A,PRO,36,A,,,PCS,1,PCS,True,False,active_site_component,backbone,O,3.4667,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,HIS,37,A,,,PCS,1,PCS,True,True,primary_coordinator,imidazole,ND1,1.963,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,CYS,84,A,,,PCS,1,PCS,True,True,primary_coordinator,thiol,SG,2.1486,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,HIS,87,A,,,PCS,1,PCS,True,True,primary_coordinator,imidazole,ND1,2.0103,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,MET,92,A,,,PCS,1,PCS,True,False,active_site_component,thioether,SD,2.8827,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,ASN,38,A,,,SCS,2,SCS,False,False,network_context,backbone,N,3.4458,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,SER,85,A,,,SCS,2,SCS,False,False,network_context,backbone,N,3.575,1
+1.0,1ag6,site_1_model_0,0,CU,200,A,PRO,86,A,,,TCS,3,TCS,False,False,network_context,backbone,N,3.0364,1

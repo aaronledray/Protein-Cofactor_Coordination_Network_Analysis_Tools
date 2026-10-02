@@ -1,0 +1,54 @@
+{
+  "analysis_parameters": {
+    "direct_coordination": true,
+    "direct_coordination_cutoff": 2.6,
+    "distance_cutoff": 3.6,
+    "expand_residues": false,
+    "include_carbon_seeds": false,
+    "shells": 3,
+    "site_mode": "per-site",
+    "site_model_mode": "per-model"
+  },
+  "cofactor_classes": [
+    "metal_ion"
+  ],
+  "cofactor_names": [
+    "CU"
+  ],
+  "contacts_vs_links": "contacts is the full atom-pair representation; links is the nearest-atom edge list kept for legacy compatibility.",
+  "contract_version": "1.0",
+  "effective_cutoff_A": 3.6,
+  "label_columns": [
+    "contract_version",
+    "structure_id",
+    "site_id",
+    "model_id",
+    "cofactor_residue_name",
+    "cofactor_residue_number",
+    "cofactor_chain",
+    "residue_name",
+    "residue_number",
+    "chain",
+    "insertion_code",
+    "hetero_flag",
+    "shell",
+    "shell_depth",
+    "shells_present",
+    "is_primary",
+    "direct_coordination",
+    "coordination_role",
+    "motifs",
+    "atoms_involved",
+    "minimum_distance_A",
+    "n_contacts"
+  ],
+  "mixed_cofactor_classes": false,
+  "shell_semantics": "Each residue is labeled with the shallowest shell it occupies; all occupied shells are listed in shells_present.",
+  "symmetry_context": {
+    "assembly_policy": "asymmetric_unit_only",
+    "has_unapplied_transforms": false,
+    "n_assemblies": 1,
+    "non_identity_operators": 0,
+    "space_group": "P 31 2 1"
+  }
+}
