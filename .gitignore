@@ -10,6 +10,10 @@ substrate_seed_output/
 benchmark_output/
 
 
+# Generated comparison outputs next to the aligned example structures (PDBs stay tracked):
+reference_structures/1_OEX/0_Aligned_Reduced/Aligned/*
+!reference_structures/1_OEX/0_Aligned_Reduced/Aligned/*.pdb
+
 # OS:
 .DS_Store
 Thumbs.db
