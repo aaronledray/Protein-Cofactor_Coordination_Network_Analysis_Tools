@@ -34,6 +34,9 @@ opt-in.
   stdout is not a terminal (previously a headless run could hang in
   `fig.show()`). Output files are unchanged; `--show` / `--no-show` override.
 
+### License
+- Relicensed from GPLv3 to the BSD Zero Clause License (0BSD) for this release.
+
 ### Notes
 - Analysis uses the deposited asymmetric unit; biological-assembly and
   crystal-symmetry transforms are not applied.

@@ -578,4 +578,6 @@ repository.
 
 ## License
 
-See [LICENSE](LICENSE).
+[BSD Zero Clause (0BSD)](LICENSE): use, copy, modify, and distribute this
+software for any purpose, with or without fee, with no attribution
+requirement. Earlier releases were published under the GPLv3.
