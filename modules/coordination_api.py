@@ -7,7 +7,7 @@ for downstream workflows such as model-label generation.
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 import pandas as pd
 import numpy as np
@@ -338,6 +338,21 @@ def _annotate_direct_coordination(
         )
 
 
+def _is_hydrogen(atom) -> bool:
+    """Hydrogen or deuterium by element; atoms without an element are kept."""
+    return str(getattr(atom, "element", "") or "").strip().upper() in {"H", "D"}
+
+
+def _strip_hydrogens(structure) -> int:
+    """Detach hydrogen/deuterium atoms in place; return how many were removed."""
+    removed = 0
+    for residue in structure.get_residues():
+        for atom in [a for a in residue if _is_hydrogen(a)]:
+            residue.detach_child(atom.get_id())
+            removed += 1
+    return removed
+
+
 def _structure_id(path: Path) -> str:
     name = path.name
     for suffix in (".gz", ".mmcif", ".cif", ".pdb"):
@@ -580,6 +595,8 @@ def analyze_structure(
     direct_coordination_cutoff: float = 2.6,
     cofactor_class_cutoffs: Optional[Dict[str, Any]] = None,
     include_model_id: bool = False,
+    explicit_sites: Optional[Mapping[str, Iterable[Sequence[Any]]]] = None,
+    exclude_hydrogens: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Analyze one structure without creating files or plots.
 
@@ -606,12 +623,29 @@ def analyze_structure(
     ``model_id`` column and has one row per residue per model, with minimum
     distances taken from that model's contacts. The default schema is
     unchanged.
+
+    ``exclude_hydrogens`` (opt-in) removes deposited hydrogen/deuterium atoms
+    before any shell is built. By default they are kept, and because shell
+    seeds exclude only carbon, hydrogens in models that include them can seed
+    shells and inflate residue counts relative to heavy-atom-only models. Set it
+    when comparing structures that differ in whether hydrogens were deposited.
+
+    ``explicit_sites`` (opt-in, requires ``site_mode="per-site"``) maps a
+    caller-chosen site ID to the cofactor residues that form that site, each
+    given as ``(resname, resnum, chain, insertion_code, hetero_flag)`` (with the
+    model ID prepended when ``site_model_mode="per-model"``). Use it when the
+    biologically meaningful site is not a single residue or a proximity cluster,
+    for example a heme plus a nearby copper. Every residue must be a selected
+    cofactor residue present in the structure, and ``combinatorial`` must be
+    off; only the listed sites are returned, in the order given.
     """
     path = Path(structure_path).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"Structure file not found: {path}")
 
     structure, _ = unpack_pdb_file(str(path))
+    if exclude_hydrogens:
+        _strip_hydrogens(structure)
     cofactor_names = _as_names(cofactor_resname)
     cofactor_names2 = _as_names(cofactor_resname2 or [])
     exclusions = list(exclude_moieties or [])
@@ -626,6 +660,8 @@ def analyze_structure(
         raise ValueError("site_model_mode must be 'pooled' or 'per-model'")
     if shells < 1:
         raise ValueError("shells must be at least 1")
+    if explicit_sites is not None and (site_mode != "per-site" or combinatorial):
+        raise ValueError("explicit_sites requires site_mode='per-site' and combinatorial=False")
 
     structure_id = _structure_id(path)
 
@@ -736,19 +772,41 @@ def analyze_structure(
     if site_mode == "union":
         return analyze_site("all")
 
-    site_groups = _cofactor_site_groups(
-        structure,
-        cofactor_names,
-        cofactor_names2,
-        combinatorial=combinatorial,
-        cutoff=combinatorial_cofactor_cutoff,
-        first_model_only=first_model_only,
-        model_mode=site_model_mode,
-    )
-    site_results = [
-        analyze_site(_site_label(index, group, site_model_mode), group)
-        for index, group in enumerate(site_groups, start=1)
-    ]
+    if explicit_sites is not None:
+        available = {
+            key
+            for group in _cofactor_site_groups(
+                structure, cofactor_names, cofactor_names2, combinatorial=False,
+                cutoff=combinatorial_cofactor_cutoff, first_model_only=first_model_only,
+                model_mode=site_model_mode,
+            )
+            for key in group
+        }
+        labeled_groups = []
+        for site_id, residues in explicit_sites.items():
+            keys = {tuple(residue) for residue in residues}
+            missing = sorted(keys - available, key=lambda key: tuple(str(part) for part in key))
+            if not keys or missing:
+                raise ValueError(
+                    f"explicit site {site_id!r} is empty or names residues that are not "
+                    f"selected cofactors in this structure: {missing}"
+                )
+            labeled_groups.append((str(site_id), keys))
+    else:
+        site_groups = _cofactor_site_groups(
+            structure,
+            cofactor_names,
+            cofactor_names2,
+            combinatorial=combinatorial,
+            cutoff=combinatorial_cofactor_cutoff,
+            first_model_only=first_model_only,
+            model_mode=site_model_mode,
+        )
+        labeled_groups = [
+            (_site_label(index, group, site_model_mode), group)
+            for index, group in enumerate(site_groups, start=1)
+        ]
+    site_results = [analyze_site(label, group) for label, group in labeled_groups]
     if not site_results:
         return {
             "residues": pd.DataFrame(
