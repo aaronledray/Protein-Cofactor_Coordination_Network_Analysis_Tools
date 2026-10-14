@@ -3,6 +3,27 @@ import os
 from typing import Tuple, List, Dict, Any
 import numpy as np
 
+def _tolerant_mmcif_parser():
+    """MMCIFParser that accepts files lacking the optional insertion-code column.
+
+    ``_atom_site.pdbx_PDB_ins_code`` is optional in mmCIF but Biopython requires
+    it (some depositions, e.g. 9A1K, omit it). Missing codes are filled with the
+    mmCIF "unassigned" marker, which Biopython reads as no insertion code.
+    """
+    from Bio.PDB import MMCIFParser
+
+    class TolerantMMCIFParser(MMCIFParser):
+        def _build_structure(self, structure_id):
+            table = getattr(self, "_mmcif_dict", None)
+            if table is not None and "_atom_site.id" in table:
+                column = "_atom_site.pdbx_PDB_ins_code"
+                if column not in table:
+                    table[column] = ["?"] * len(table["_atom_site.id"])
+            return super()._build_structure(structure_id)
+
+    return TolerantMMCIFParser(QUIET=True)
+
+
 def _choose_parser(struct_path: str):
     """Return a Biopython parser appropriate for the structure file."""
     from Bio.PDB import PDBParser, MMCIFParser
@@ -10,10 +31,10 @@ def _choose_parser(struct_path: str):
     if lp.endswith(".pdb") or lp.endswith(".pdb.gz"):
         return PDBParser(QUIET=True)
     if lp.endswith(".cif") or lp.endswith(".mmcif") or lp.endswith(".cif.gz") or lp.endswith(".mmcif.gz"):
-        return MMCIFParser(QUIET=True)
+        return _tolerant_mmcif_parser()
     # Fallback: try CIF first, then PDB
     try:
-        return MMCIFParser(QUIET=True)
+        return _tolerant_mmcif_parser()
     except Exception:
         return PDBParser(QUIET=True)
 
