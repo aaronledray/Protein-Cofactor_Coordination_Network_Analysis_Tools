@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.1
+
+### Added
+- Opt-in `explicit_sites` for `analyze_structure()`: caller-defined cofactor sites
+  (for example heme plus copper).
+- Opt-in `exclude_hydrogens` for `analyze_structure()`.
+
+### Fixed
+- mmCIF files that omit the optional `_atom_site.pdbx_PDB_ins_code` column now load.
+
+### Notes
+- Hydrogens still seed shells by default (legacy behavior unchanged), so shell sizes
+  differ between models with and without deposited hydrogens unless
+  `exclude_hydrogens=True`. Consider making exclusion the default in a future
+  labeling-contract version.
+
 ## 0.2.0
 
 Backward compatible with 0.1.0: the legacy single-structure command, its

@@ -271,6 +271,19 @@ compared within the same model. This is useful for multi-cofactor systems
 such as nitrogenase without allowing cross-model distances to create a false
 cluster.
 
+Two opt-in options help when comparing many structures:
+
+- `explicit_sites={"site": [(resname, resnum, chain, insertion_code, hetero_flag), ...]}`
+  (with `site_mode="per-site"`) defines each site from the cofactor residues you
+  name, for example a heme plus the copper next to it. Include the model ID first
+  in each tuple when `site_model_mode="per-model"`. Unknown residues raise.
+- `exclude_hydrogens=True` removes deposited hydrogen/deuterium atoms before any
+  shell is built. By default they are kept, and since only carbon is excluded from
+  shell seeds, hydrogens in models that include them can seed shells and inflate
+  residue counts relative to heavy-atom-only models (in a human cytochrome c
+  oxidase model, 46 of 65 primary-shell atoms around heme a were hydrogens).
+  Use it whenever structures differ in whether hydrogens were deposited.
+
 Legacy CSV reports can be adapted into the same four-table contract used by
 the current API without rewriting or modifying the original files:
 
