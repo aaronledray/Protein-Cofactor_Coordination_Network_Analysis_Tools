@@ -95,6 +95,24 @@ dotted grey lines with progressively thinner lines for deeper shells. The
 viewer also includes axis units in Å, a compact contact legend, click-to-view
 atom details, and an image-export toolbar action. All viewer controls are
 arranged in a vertical toolbar on the left side of the HTML window.
+An optional external residue-pair graph can be overlaid without changing CNI
+shell assignments or contact tables. Pass `--external-residue-network graph.csv`
+to enable the cohesive viewer and add Cα-to-Cα links from a CSV with these
+required columns:
+
+```csv
+source_chain,source_residue_number,target_chain,target_residue_number,source_insertion_code,target_insertion_code,edge_group,color,evidence
+A,42,B,81,,,sequence-balanced,#0072B2,manuscript edge 1
+```
+
+Insertion-code columns, `edge_group`, `color`, and other metadata columns are
+optional. Extra non-endpoint columns appear in edge hover text. The viewer has
+an independent External graph On/Off control and an External residue graph view
+preset; the preset shows the full structure context with the complete imported
+graph and works with the image-export button. A status panel reports mapped
+and unmapped rows, including endpoints that have no matching Cα residue.
+Imported edges are labeled as an external residue-level graph and remain
+separate from CNI's atom-level coordination contacts.
 Recognized motif-level interactions, including heme-propionate O contacts
 with nearby polar N/O/S atoms, are included as primary contacts with
 explanatory hover text. These remain distinct from direct Fe coordination.
@@ -104,6 +122,7 @@ Useful additive options include:
 ```text
 --no-plots                         Skip PNG/HTML rendering.
 --cohesive-viewer                  Use the all-in-one viewer and write contact/atom tables.
+--external-residue-network FILE   Overlay a separate external residue-pair graph in the cohesive viewer.
 --show / --no-show                Force or suppress figure windows and browser tabs.
 --compact-html                     Use a CDN-backed Plotly bundle for smaller HTML output.
 --first-model                      Analyze only the first model.
@@ -588,6 +607,14 @@ compare_coordination_networks.py Pairwise and family-profile comparison CLI
 Generated analysis outputs belong in ignored output directories. Do not add
 credentials, private structures, or local development notes to the public
 repository.
+
+# Optional typed interaction analysis
+
+The independent Arpeggio-backed chemical interaction layer is opt-in. It
+preserves CNI's distance-defined baseline and writes separate atom-level
+evidence tables for protein contacts, cofactor/ligand contacts, and water
+endpoints. See [typed interaction analysis](docs/typed_interactions.md) for
+installation, criteria, mapped-edge input, parameters, and protonation limits.
 
 ## License
 

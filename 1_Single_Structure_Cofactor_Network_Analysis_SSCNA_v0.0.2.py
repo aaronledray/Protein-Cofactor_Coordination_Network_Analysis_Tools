@@ -444,6 +444,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
                 output_filename=os.path.join(output_dir, f"{file_prefix}coordination_network.html"),
                 first_model_only=first_model_only,
                 compact_html=bool(params.get("compact_html", False)),
+                external_residue_network_csv=params.get("external_residue_network_csv"),
             )
         logger.info("Wrote %d-shell tidy coordination tables.", shell_count)
         return
@@ -597,6 +598,7 @@ def run_coord_network(params: Dict[str, Any]) -> None:
             output_filename=os.path.join(output_dir, f"{file_prefix}coordination_network.html"),
             first_model_only=first_model_only,
             compact_html=bool(params.get("compact_html", False)),
+            external_residue_network_csv=params.get("external_residue_network_csv"),
         )
 
     logger.info("Coord_Network complete.")
@@ -670,6 +672,11 @@ def parse_args() -> argparse.Namespace:
     show.add_argument("--show", action="store_true", help="Force showing figures/browser tabs (default: only when run from a terminal)")
     show.add_argument("--no-show", action="store_true", help="Never open figure windows or browser tabs; files are still written")
     p.add_argument("--cohesive-viewer", action="store_true", help="Opt in to the all-in-one interactive viewer (<structure>_coordination_network.html) and its Coord_Contacts/Coordination_Atoms CSVs")
+    p.add_argument(
+        "--external-residue-network",
+        dest="external_residue_network_csv",
+        help="Overlay an external residue-pair CSV (source_chain/source_residue_number/target_chain/target_residue_number); enables the cohesive viewer",
+    )
     p.add_argument("--compact-html", action="store_true", help="Use a CDN-backed Plotly bundle for smaller HTML output")
     p.add_argument("--first-model", action="store_true", help="Analyze only the first structure model")
     p.add_argument("--include-carbon-seeds", action="store_true", help="Allow carbon atoms to seed shells")
@@ -718,6 +725,9 @@ def main():
     if args.compact_html:
         cli_params["compact_html"] = True
     if args.cohesive_viewer:
+        cli_params["cohesive_viewer"] = True
+    if args.external_residue_network_csv:
+        cli_params["external_residue_network_csv"] = args.external_residue_network_csv
         cli_params["cohesive_viewer"] = True
     if args.show or args.no_show:
         from modules.display import set_show_figures

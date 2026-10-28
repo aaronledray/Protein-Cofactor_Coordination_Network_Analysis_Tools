@@ -41,6 +41,8 @@ releases and they are not part of the labeling contract:
 - substrate seeds: `substrate_seeds`, `substrate_viewer`, `sscna substrate`
 - plotting and display: `plotting` (including the cohesive viewer), `analysis`,
   `display`
+- typed interaction analysis: `interaction_typing`, `interaction_cli`,
+  `type-coordination-interactions` (optional PDBe Arpeggio dependency)
 
 Wire and substrate results are structural hypotheses, not rate, binding, or
 reactivity calculations.

@@ -23,6 +23,7 @@ EXPERIMENTAL = {
     "plotting", "analysis", "display", "network_comparison", "network_alignment",
     "comparison_runner", "comparison_plots", "conservation_viewer", "protein_wires",
     "wire_viewer", "substrate_seeds", "substrate_viewer", "legacy_adapter",
+    "interaction_typing", "interaction_cli",
 }
 HEAVY_PLOTTING = {"plotly", "matplotlib", "mpl_toolkits"}
 

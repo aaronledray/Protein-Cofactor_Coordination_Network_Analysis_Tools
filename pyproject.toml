@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+interactions = ["pdbe-arpeggio==1.4.4"]
 
 [tool.setuptools]
 packages = ["modules"]
@@ -37,3 +38,4 @@ py-modules = [
 [project.scripts]
 sscna = "sscna_cli:main"
 compare-coordination-networks = "compare_coordination_networks:main"
+type-coordination-interactions = "modules.interaction_cli:main"

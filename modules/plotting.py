@@ -8,6 +8,11 @@ Currently exposes:
 
 from typing import Any, List, Optional, Sequence
 import logging
+import csv
+import html
+import json
+import re
+from collections import OrderedDict
 import pandas as pd
 import matplotlib.pyplot as plt
 
@@ -630,6 +635,7 @@ def plot_interactive_cohesive_network(
     compact_html: bool = False,
     conservation_by_residue: Optional[Dict[tuple, float]] = None,
     conservation_label: str = "Profile conservation",
+    external_residue_network_csv: Optional[str] = None,
 ) -> None:
     """Write a layered, standalone interactive coordination-network viewer.
 
@@ -764,6 +770,148 @@ def plot_interactive_cohesive_network(
     coordinates_by_base_key = {
         _atom_key(atom, include_model=False): atom["coordinates"] for atom in full_atoms
     }
+
+    external_graph_groups: OrderedDict = OrderedDict()
+    external_graph_unmapped: List[str] = []
+    external_graph_input_count = 0
+    if external_residue_network_csv:
+        aliases = {
+            "source_chain": ("source_chain", "source_chain_id", "src_chain"),
+            "source_number": ("source_residue_number", "source_resnum", "src_resnum", "source_number"),
+            "target_chain": ("target_chain", "target_chain_id", "dst_chain"),
+            "target_number": ("target_residue_number", "target_resnum", "dst_resnum", "target_number"),
+            "source_icode": ("source_insertion_code", "source_icode", "src_insertion_code"),
+            "target_icode": ("target_insertion_code", "target_icode", "dst_insertion_code"),
+        }
+
+        def _residue_number(value: str) -> str:
+            # CSVs saved by spreadsheets commonly serialize integer residue
+            # numbers as e.g. "42.0". Normalize those to the PDB integer ID.
+            try:
+                number = float(value)
+                if number.is_integer():
+                    return str(int(number))
+            except (TypeError, ValueError):
+                pass
+            return str(value).strip()
+
+        structure_residues: Dict[tuple, Dict[str, Any]] = {}
+        representative_models = list(structure)[:1]
+        for model in representative_models:
+            for chain in model:
+                for residue in chain:
+                    residue_id = residue.get_id()
+                    ca = residue.child_dict.get("CA")
+                    key = (str(chain.id).strip(), str(residue_id[1]), str(residue_id[2] or "").strip())
+                    if ca is not None:
+                        structure_residues[key] = {
+                            "coordinates": np.asarray(ca.coord, dtype=float),
+                            "resname": str(residue.get_resname()).strip(),
+                            "model_id": str(model.id),
+                        }
+
+        with open(external_residue_network_csv, newline="", encoding="utf-8-sig") as csv_file:
+            reader = csv.DictReader(csv_file)
+            fieldnames = list(reader.fieldnames or [])
+            normalized_fields = {str(field).strip().lower(): field for field in fieldnames}
+            required = ("source_chain", "source_number", "target_chain", "target_number")
+            missing = [
+                name for name in required
+                if not any(alias in normalized_fields for alias in aliases[name])
+            ]
+            if missing:
+                raise ValueError(
+                    "External residue-network CSV requires source_chain, "
+                    "source_residue_number, target_chain, and target_residue_number columns"
+                )
+
+            def _row_value(row: Dict[str, Any], logical_name: str) -> str:
+                actual = next(
+                    (normalized_fields[alias] for alias in aliases[logical_name] if alias in normalized_fields),
+                    "",
+                )
+                return str(row.get(actual, "") or "").strip()
+
+            for row_index, row in enumerate(reader, start=2):
+                external_graph_input_count += 1
+                source_chain = _row_value(row, "source_chain")
+                source_number = _residue_number(_row_value(row, "source_number"))
+                target_chain = _row_value(row, "target_chain")
+                target_number = _residue_number(_row_value(row, "target_number"))
+                source_icode = _row_value(row, "source_icode")
+                target_icode = _row_value(row, "target_icode")
+                source_label = f"{source_chain}:{source_number}{source_icode}"
+                target_label = f"{target_chain}:{target_number}{target_icode}"
+                source = structure_residues.get((source_chain, source_number, source_icode))
+                target = structure_residues.get((target_chain, target_number, target_icode))
+                if source is None or target is None:
+                    missing_ends = []
+                    if source is None:
+                        missing_ends.append(f"source {source_label}")
+                    if target is None:
+                        missing_ends.append(f"target {target_label}")
+                    external_graph_unmapped.append(
+                        f"CSV row {row_index}: {source_label} → {target_label} "
+                        f"({', '.join(missing_ends)} has no matching Cα residue)"
+                    )
+                    continue
+
+                group_column = next(
+                    (normalized_fields[name] for name in ("edge_group", "group", "category") if name in normalized_fields),
+                    "",
+                )
+                color_column = next(
+                    (normalized_fields[name] for name in ("color", "edge_color") if name in normalized_fields),
+                    "",
+                )
+                group = str(row.get(group_column, "") or "").strip() or "Imported edges"
+                requested_color = str(row.get(color_column, "") or "").strip()
+                safe_color = requested_color if re.fullmatch(r"#[0-9a-fA-F]{3,8}|[A-Za-z]+", requested_color) else ""
+                color = safe_color or ""
+                key = (group, color)
+                if key not in external_graph_groups:
+                    palette = ("#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9", "#6A3D9A")
+                    external_graph_groups[key] = {
+                        "group": group,
+                        "color": color or palette[len(external_graph_groups) % len(palette)],
+                        "x": [], "y": [], "z": [], "text": [], "edge_count": 0,
+                    }
+
+                metadata_fields = []
+                endpoint_and_style_columns = {
+                    normalized_fields[alias]
+                    for names in aliases.values()
+                    for alias in names
+                    if alias in normalized_fields
+                }
+                endpoint_and_style_columns.update(
+                    normalized_fields[name]
+                    for name in ("edge_group", "group", "category", "color", "edge_color")
+                    if name in normalized_fields
+                )
+                for column, value in row.items():
+                    value = str(value or "").strip()
+                    if column not in endpoint_and_style_columns and value:
+                        metadata_fields.append(f"{html.escape(str(column))}: {html.escape(value)}")
+                hover = (
+                    "<b>External residue-level graph</b><br>"
+                    "Imported residue-pair edge; not a CNI coordination contact<br>"
+                    f"Source: {html.escape(source['resname'])} {html.escape(source_label)}<br>"
+                    f"Target: {html.escape(target['resname'])} {html.escape(target_label)}<br>"
+                    f"Edge group: {html.escape(group)}"
+                )
+                if requested_color:
+                    hover += f"<br>Edge color: {html.escape(requested_color)}"
+                if metadata_fields:
+                    hover += "<br>" + "<br>".join(metadata_fields)
+                trace = external_graph_groups[key]
+                trace["x"].extend([float(source["coordinates"][0]), float(target["coordinates"][0]), None])
+                trace["y"].extend([float(source["coordinates"][1]), float(target["coordinates"][1]), None])
+                trace["z"].extend([float(source["coordinates"][2]), float(target["coordinates"][2]), None])
+                trace["text"].extend([hover, hover, None])
+                trace["edge_count"] += 1
+
+    external_graph_traces = list(external_graph_groups.values())
 
     if contacts is None:
         contact_rows: List[Dict] = []
@@ -1227,16 +1375,38 @@ def plot_interactive_cohesive_network(
         text=tertiary_hover, hoverinfo="text",
         name="Tertiary coordination", visible=True,
     ))
+    for external_trace in external_graph_traces:
+        fig.add_trace(go.Scatter3d(
+            x=external_trace["x"], y=external_trace["y"], z=external_trace["z"],
+            mode="lines",
+            line=dict(color=external_trace["color"], width=6, dash="solid"),
+            opacity=0.95,
+            text=external_trace["text"], hoverinfo="text",
+            name=f"External residue graph — {external_trace['group']} ({external_trace['edge_count']} edges)",
+            visible=True, showlegend=False,
+        ))
 
     full_index, network_index, coordinator_index, context_index = 0, 1, 2, 3
     network_motif_index, network_backbone_index, focused_motif_index, focused_backbone_index = 4, 5, 6, 7
     cofactor_bond_index, focused_bond_index, residue_bond_index, full_bond_index, motif_bond_index, backbone_bond_index = 8, 9, 10, 11, 12, 13
     primary_index, secondary_index, tertiary_index = 14, 15, 16
     all_trace_indices = list(range(17))
-    network_preset_visibility = [False, True, True, False, False, False, False, False, True, False, True, False, False, False, True, True, True]
-    network_motifs_preset_visibility = [False, True, True, False, True, False, False, False, True, False, False, False, True, False, True, True, True]
-    structural_context_preset_visibility = [False, True, True, True, False, False, True, True, True, False, False, False, False, True, True, True, True]
-    full_protein_preset_visibility = [True, True, True, False, False, False, False, False, True, False, False, True, False, False, True, True, True]
+    external_graph_indices = list(range(17, 17 + len(external_graph_traces)))
+    network_preset_visibility = [False, True, True, False, False, False, False, False, True, False, True, False, False, False, True, True, True] + [False] * len(external_graph_indices)
+    network_motifs_preset_visibility = [False, True, True, False, True, False, False, False, True, False, False, False, True, False, True, True, True] + [False] * len(external_graph_indices)
+    structural_context_preset_visibility = [False, True, True, True, False, False, True, True, True, False, False, False, False, True, True, True, True] + [False] * len(external_graph_indices)
+    full_protein_preset_visibility = [True, True, True, False, False, False, False, False, True, False, False, True, False, False, True, True, True] + [False] * len(external_graph_indices)
+    external_graph_preset_visibility = [True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False] + [True] * len(external_graph_indices)
+    view_preset_buttons = [
+        dict(label="Network", method="update", args=[{"visible": network_preset_visibility}, {f"annotations[{10 if external_residue_network_csv else 9}].text": "View: Network"}]),
+        dict(label="Network + motifs", method="update", args=[{"visible": network_motifs_preset_visibility}, {f"annotations[{10 if external_residue_network_csv else 9}].text": "View: Network + motifs"}]),
+        dict(label="Structural context", method="update", args=[{"visible": structural_context_preset_visibility}, {f"annotations[{10 if external_residue_network_csv else 9}].text": "View: Structural context"}]),
+        dict(label="Full protein context", method="update", args=[{"visible": full_protein_preset_visibility}, {f"annotations[{10 if external_residue_network_csv else 9}].text": "View: Full protein context"}]),
+    ]
+    if external_residue_network_csv:
+        view_preset_buttons.append(
+            dict(label="External residue graph", method="update", args=[{"visible": external_graph_preset_visibility}, {f"annotations[10].text": "View: External residue graph (residue level)"}])
+        )
     color_by_buttons = [
         dict(label="Coordination shells", method="restyle", args=[{"marker.color": [network_shell_colors, coordinator_shell_colors, context_shell_colors, network_motif_shell_colors, network_backbone_shell_colors, focused_motif_shell_colors, focused_backbone_shell_colors]}, [network_index, coordinator_index, context_index, network_motif_index, network_backbone_index, focused_motif_index, focused_backbone_index]]),
         dict(label="Elements", method="restyle", args=[{"marker.color": [network_element_colors, coordinator_element_colors, context_element_colors, network_motif_element_colors, network_backbone_element_colors, motif_element_colors, backbone_element_colors]}, [network_index, coordinator_index, context_index, network_motif_index, network_backbone_index, focused_motif_index, focused_backbone_index]]),
@@ -1250,6 +1420,19 @@ def plot_interactive_cohesive_network(
                 args=[{"marker.color": [network_conservation_colors, coordinator_conservation_colors, context_conservation_colors, network_motif_conservation_colors, network_backbone_conservation_colors, focused_motif_conservation_colors, focused_backbone_conservation_colors]}, [network_index, coordinator_index, context_index, network_motif_index, network_backbone_index, focused_motif_index, focused_backbone_index]],
             )
         )
+    external_layer_menu = []
+    if external_residue_network_csv:
+        external_layer_menu.append(
+            dict(type="dropdown", direction="down", x=0.01, y=0.40, xanchor="left", yanchor="top", showactive=True,
+                 bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
+                dict(label="On", method="restyle", args=[{"visible": [True] * len(external_graph_indices)}, external_graph_indices]),
+                dict(label="Off", method="restyle", args=[{"visible": [False] * len(external_graph_indices)}, external_graph_indices]),
+            ])
+        )
+    contact_menu_y = 0.29 if external_residue_network_csv else 0.40
+    grid_menu_y = 0.20 if external_residue_network_csv else 0.29
+    background_menu_y = 0.11 if external_residue_network_csv else 0.18
+    labels_menu_y = 0.02 if external_residue_network_csv else 0.07
     fig.update_layout(
         title={"text": f"Cofactor coordination network: {cofactor_resname} in {pdb_name}", "x": 0.60, "font": {"size": 22}},
         scene=dict(
@@ -1265,10 +1448,7 @@ def plot_interactive_cohesive_network(
         updatemenus=[
             dict(type="dropdown", direction="down", x=0.01, y=0.95, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
-                dict(label="Network", method="update", args=[{"visible": network_preset_visibility}, {"annotations[8].text": "View: Network"}]),
-                dict(label="Network + motifs", method="update", args=[{"visible": network_motifs_preset_visibility}, {"annotations[8].text": "View: Network + motifs"}]),
-                dict(label="Structural context", method="update", args=[{"visible": structural_context_preset_visibility}, {"annotations[8].text": "View: Structural context"}]),
-                dict(label="Full protein context", method="update", args=[{"visible": full_protein_preset_visibility}, {"annotations[8].text": "View: Full protein context"}]),
+                *view_preset_buttons,
             ]),
             dict(type="dropdown", direction="down", x=0.01, y=0.84, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
@@ -1302,7 +1482,8 @@ def plot_interactive_cohesive_network(
                 dict(label="All", method="restyle", args=[{"visible": [True, True, True, True, True]}, [focused_bond_index, residue_bond_index, full_bond_index, motif_bond_index, backbone_bond_index]]),
                 dict(label="None", method="restyle", args=[{"visible": [False, False, False, False, False]}, [focused_bond_index, residue_bond_index, full_bond_index, motif_bond_index, backbone_bond_index]]),
             ]),
-            dict(type="dropdown", direction="down", x=0.01, y=0.40, xanchor="left", yanchor="top", showactive=True,
+            *external_layer_menu,
+            dict(type="dropdown", direction="down", x=0.01, y=contact_menu_y, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
                 dict(label="All", method="restyle", args=[{"visible": [True, True, True]}, [primary_index, secondary_index, tertiary_index]]),
                 dict(label="Primary", method="restyle", args=[{"visible": [True, False, False]}, [primary_index, secondary_index, tertiary_index]]),
@@ -1310,7 +1491,7 @@ def plot_interactive_cohesive_network(
                 dict(label="Tertiary", method="restyle", args=[{"visible": [False, False, True]}, [primary_index, secondary_index, tertiary_index]]),
                 dict(label="None", method="restyle", args=[{"visible": [False, False, False]}, [primary_index, secondary_index, tertiary_index]]),
             ]),
-            dict(type="dropdown", direction="down", x=0.01, y=0.29, xanchor="left", yanchor="top", showactive=True,
+            dict(type="dropdown", direction="down", x=0.01, y=grid_menu_y, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
                 dict(label="On", method="relayout", args=[{
                     "scene.xaxis.showgrid": True,
@@ -1323,7 +1504,7 @@ def plot_interactive_cohesive_network(
                     "scene.zaxis.showgrid": False,
                 }]),
             ]),
-            dict(type="dropdown", direction="up", x=0.01, y=0.18, xanchor="left", yanchor="top", showactive=True,
+            dict(type="dropdown", direction="up", x=0.01, y=background_menu_y, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
                 dict(label="On", method="relayout", args=[{
                     "scene.bgcolor": "#e5ecf6",
@@ -1341,7 +1522,7 @@ def plot_interactive_cohesive_network(
                     "scene.zaxis.showbackground": False,
                 }]),
             ]),
-            dict(type="dropdown", direction="up", x=0.01, y=0.07, xanchor="left", yanchor="top", showactive=True,
+            dict(type="dropdown", direction="up", x=0.01, y=labels_menu_y, xanchor="left", yanchor="top", showactive=True,
                  bgcolor="white", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=12), pad=dict(l=5, r=5, t=3, b=3), buttons=[
                 dict(label="On", method="relayout", args=[{
                     "scene.xaxis.showticklabels": True,
@@ -1367,10 +1548,11 @@ def plot_interactive_cohesive_network(
             dict(text="Atom layers", x=0.01, y=0.775, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
             dict(text="Color by", x=0.01, y=0.665, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
             dict(text="Bonds", x=0.01, y=0.555, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
-            dict(text="Contacts", x=0.01, y=0.445, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
-            dict(text="Grid", x=0.01, y=0.335, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
-            dict(text="Background", x=0.01, y=0.225, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
-            dict(text="Labels", x=0.01, y=0.115, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
+            dict(text="External graph (residue level)" if external_residue_network_csv else "Contacts", x=0.01, y=0.445, xref="paper", yref="paper", showarrow=False, font=dict(size=10 if external_residue_network_csv else 11, color="#52627a"), xanchor="left"),
+            dict(text="Contacts" if external_residue_network_csv else "Grid", x=0.01, y=0.335 if external_residue_network_csv else 0.335, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
+            dict(text="Grid" if external_residue_network_csv else "Background", x=0.01, y=0.245 if external_residue_network_csv else 0.225, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
+            dict(text="Background" if external_residue_network_csv else "Labels", x=0.01, y=0.155 if external_residue_network_csv else 0.115, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left"),
+            *([dict(text="Labels", x=0.01, y=0.065, xref="paper", yref="paper", showarrow=False, font=dict(size=11, color="#52627a"), xanchor="left")] if external_residue_network_csv else []),
             dict(text="View: Network", x=0.21, y=0.995, xref="paper", yref="paper", showarrow=False, bgcolor="rgba(255,255,255,0.8)", bordercolor="#b8c4d6", borderwidth=1, font=dict(size=10, color="#52627a"), xanchor="left"),
         ],
     )
@@ -1411,6 +1593,29 @@ if (coordinationPlot) {
     atomDetails.textContent = (point.data.name || 'Selected atom') + '\\n' + details;
   });
 }
+"""
+    if external_residue_network_csv:
+        unmapped_lines = "\n".join(external_graph_unmapped) if external_graph_unmapped else "Unmapped edges: none"
+        report_text = (
+            "External residue-level graph\n"
+            f"Mapped edges: {external_graph_input_count - len(external_graph_unmapped)}/{external_graph_input_count}\n"
+            f"Unmapped edges: {len(external_graph_unmapped)}\n{unmapped_lines}"
+        )
+        post_script += f"""
+const externalGraphStatus = {json.dumps(report_text, ensure_ascii=False)};
+const externalGraphPanel = document.createElement('div');
+externalGraphPanel.id = 'external-residue-graph-status';
+externalGraphPanel.textContent = externalGraphStatus;
+externalGraphPanel.style.cssText = [
+  'position: fixed', 'right: 14px', 'top: 14px', 'z-index: 20',
+  'max-width: 360px', 'max-height: 30vh', 'overflow: auto',
+  'padding: 9px 11px', 'white-space: pre-line',
+  'font: 12px Arial, sans-serif', 'line-height: 1.35',
+  'color: #17324d', 'background: rgba(255,255,255,0.94)',
+  'border: 1px solid #0072B2', 'border-radius: 4px',
+  'box-shadow: 0 1px 4px rgba(0,0,0,0.12)', 'pointer-events: none'
+].join(';');
+document.body.appendChild(externalGraphPanel);
 """
     fig.write_html(
         output_filename,
