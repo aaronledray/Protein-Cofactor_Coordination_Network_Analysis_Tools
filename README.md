@@ -361,6 +361,24 @@ duplicates, because real non-crystallographic copies differ by contact noise.
 Grouping never proves symmetry relatedness; use sequence or chain identity
 for that.
 
+## Conserved interactions across structure sets
+
+`modules.conserved_interactions` finds the interactions that recur in nearly every sequence of every group
+of a structure set, and types their chemistry: residue-residue contacts (closest-atom class, polar-capable
+N/O pair, hydrophobic, ring-atom, ionic), contacts to named cofactor features, residues bridged to a feature
+by one modeled water, hydrogen-bond links through waters and side chains, and the one-vote-per-sequence
+conservation rule, plus an audit that flags structures whose residue correspondence misplaces a known
+anchor. `modules.protonation` adds optional PROPKA pKa prediction, `reduce` hydrogens, and directional
+hydrogen-bond geometry. Both are experimental; see `docs/conserved_interactions.md` (inputs, rules,
+validation against the heme-copper oxidase analysis).
+
+```python
+from modules import conserved_interactions as ci
+atoms = pd.concat([ci.load_atoms(path, chain, position_map, structure_id=sid) for sid, path, chain, position_map in entries])
+votes = ci.conserved_contacts(atoms, structures)           # structures: structure_id, group, sequence_id
+print(ci.chemistry_summary(votes))
+```
+
 ## Hypothetical substrate-point seeds
 
 `modules/substrate_seeds.py` is an opt-in, side-effect-free API for tracing

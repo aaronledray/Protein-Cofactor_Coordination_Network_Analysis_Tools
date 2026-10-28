@@ -21,6 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 interactions = ["pdbe-arpeggio==1.4.4"]
+protonation = ["propka>=3.5"]
 
 [tool.setuptools]
 packages = ["modules"]
