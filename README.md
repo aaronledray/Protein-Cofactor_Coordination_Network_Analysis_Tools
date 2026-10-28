@@ -10,7 +10,7 @@ headless use from Python or the command line.
 ## What it provides
 
 - Single-structure coordination analysis for PDB and mmCIF files.
-- Legacy CSV/PNG/HTML reports for interactive inspection.
+- Tidy coordination tables and an interactive HTML viewer for each structure.
 - Side-effect-free pandas tables for downstream workflows.
 - Batch processing with multiprocessing and per-structure error isolation.
 - Optional per-site analysis, arbitrary shell depth, direct metal-ligand
@@ -20,8 +20,7 @@ headless use from Python or the command line.
 
 By default, PCS and SCS seed selection excludes carbon atoms, chooses at most
 one atom per chemical moiety except for the configured multi-atom moieties,
-and uses a 3.6 Å cutoff. Existing legacy runs retain their current defaults
-and output filenames.
+and uses a 3.6 Å cutoff.
 
 ## Installation
 
@@ -35,54 +34,34 @@ python -m pip install -e .
 
 ## Single-structure analysis
 
-The original SSCNA command remains available:
-
-```bash
-python 1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py \
-  --template reference_structures/0_Plastocyanin/1ag6.cif \
-  --cofactor CU \
-  --distance 3.6 \
-  --exclude-moieties alanine_sidechain \
-  --mode Coord_Network
-```
-
-The stable installed command is equivalent and uses the same legacy defaults,
-configuration files, output names, and report schema:
-
 ```bash
 sscna analyze \
   --input reference_structures/0_Plastocyanin/1ag6.cif \
   --cofactor CU \
-  --distance 3.6 \
-  --exclude-moieties alanine_sidechain \
-  --mode Coord_Network
+  --distance 3.6
 ```
 
-All legacy analyzer options can follow `sscna analyze`; `--template` is also
-accepted as a compatibility alias for `--input`. The comparison workflows are
-available as `sscna compare pairwise ...` and `sscna compare profile ...`;
-`sscna wire` and `sscna substrate` are described below.
+`sscna analyze` builds the tidy coordination tables with the headless API and
+renders the cohesive interactive viewer. `--template` is accepted as an alias
+for `--input`. Browser tabs open only when run from a terminal; piped, CI, cron,
+and subprocess runs write the same files without opening or blocking on
+anything, and `--show` and `--no-show` override that choice. The comparison
+workflows are available as `sscna compare pairwise ...` and
+`sscna compare profile ...`; `sscna wire` and `sscna substrate` are described
+below.
 
-The legacy plotting path opens matplotlib windows and a browser tab only when
-run from a terminal; piped, CI, cron, and subprocess runs write the same files
-without opening or blocking on anything. `--show` and `--no-show` override
-that choice.
+Outputs are written under `SSCNA_output/` (change it with `--output-dir`),
+prefixed with the input file name:
 
-Outputs are written under `SSCNA_output/`:
+- `<structure>_Coordination_Residues.csv`: residue-level shell labels.
+- `<structure>_Coordination_Atoms.csv`: atom-level shell membership with separate
+  `coordination_role` values for primary coordinators, network context, and
+  geometric active-site components.
+- `<structure>_Coord_Links.csv`: nearest-atom cofactor→PCS, PCS→SCS, and deeper links.
+- `<structure>_Coord_Contacts.csv`: the full atom-pair contact table.
+- `<structure>_coordination_network.html`: the cohesive viewer (not written with `--no-plots`).
 
-- `<structure>_Coord_Breakdown.csv`: residue summary plus atom coordinates.
-- `<structure>_Coord_Breakdown_atoms.csv`: atom-level category report.
-- `<structure>_Coord_Links.csv`: nearest cofactor→PCS and PCS→SCS links.
-- PNG plots and `<structure>_1_template_coordination_network.html`, the
-  original interactive viewer, unless `--no-plots` is supplied.
-
-With `--cohesive-viewer` (opt-in), the HTML is instead written as
-`<structure>_coordination_network.html`, together with
-`<structure>_Coord_Contacts.csv` and `<structure>_Coordination_Atoms.csv`
-(shell membership with separate `coordination_role` values for primary
-coordinators, network context, and geometric active-site components). The
-tidy modes (`--shells N > 2`, `--per-site`, `--direct-coordination`, class
-cutoffs) always use the cohesive viewer and these tables.
+The default is three shells; `--shells N` sets another depth.
 
 The cohesive viewer is the all-in-one interactive viewer with full-protein context, focused shell views, motif coloring, and exact
 primary/secondary/tertiary contact overlays. Its layer controls independently
@@ -97,7 +76,7 @@ atom details, and an image-export toolbar action. All viewer controls are
 arranged in a vertical toolbar on the left side of the HTML window.
 An optional external residue-pair graph can be overlaid without changing CNI
 shell assignments or contact tables. Pass `--external-residue-network graph.csv`
-to enable the cohesive viewer and add Cα-to-Cα links from a CSV with these
+to add Cα-to-Cα links from a CSV with these
 required columns:
 
 ```csv
@@ -117,27 +96,34 @@ Recognized motif-level interactions, including heme-propionate O contacts
 with nearby polar N/O/S atoms, are included as primary contacts with
 explanatory hover text. These remain distinct from direct Fe coordination.
 
-Useful additive options include:
+Options:
 
 ```text
---no-plots                         Skip PNG/HTML rendering.
---cohesive-viewer                  Use the all-in-one viewer and write contact/atom tables.
---external-residue-network FILE   Overlay a separate external residue-pair graph in the cohesive viewer.
---show / --no-show                Force or suppress figure windows and browser tabs.
---compact-html                     Use a CDN-backed Plotly bundle for smaller HTML output.
---first-model                      Analyze only the first model.
---shells N                         Add TCS and deeper shells for N > 2.
+--input FILE                       Structure (PDB/mmCIF, .gz accepted); --template is an alias.
+--cofactor NAMES                   Cofactor residue name(s), comma-separated.
+--cofactor2 NAMES                  Second cofactor residue name(s).
+--distance 3.6                     Moiety interaction cutoff in Å.
+--shells N                         Number of coordination shells (default 3).
 --per-site                         Separate cofactor sites in tidy output.
 --site-model-mode per-model        Keep otherwise identical sites separate by model.
+--expand-residues                  Expand shell members to whole residues.
+--combinatorial                    Combinatorial cofactor filtering (--combinatorial-cutoff Å).
+--exclude-moieties NAMES           Moieties to exclude (default alanine_sidechain).
+--first-model                      Analyze only the first model.
 --include-carbon-seeds             Allow carbon atoms to seed shells.
 --direct-coordination              Annotate direct metal-ligand links.
 --direct-coordination-cutoff 2.6   Set the direct-link distance in Å.
 --cofactor-class-cutoff metal=2.8  Override a class cutoff; repeatable.
 --cofactor-class-config rules.yaml Load named cofactor-family cutoff rules.
+--output-dir DIR                   Output directory.
+--no-plots                         Write the tables only.
+--compact-html                     Use a CDN-backed Plotly bundle for smaller HTML output.
+--external-residue-network FILE   Overlay a separate external residue-pair graph in the viewer.
+--show / --no-show                Force or suppress browser tabs.
 --verbose                          Show progress logs.
 ```
 
-Named cofactor-class rules are additive and do not change the legacy 3.6 Å
+Named cofactor-class rules are additive and do not change the 3.6 Å
 default unless explicitly configured. Built-in families include `metal_ion`,
 `heme`, `iron_sulfur_cluster`, `metallo_cluster`, and `organic_cofactor`.
 The aliases `metal`, `iron-sulfur`, `cluster`, and `organic` are accepted for
@@ -220,7 +206,7 @@ or quantum-coupling calculation. `wire_targets.csv` and the summary JSON
 report residue-name mismatches such as requesting `TRP:A:93:NE1` when the
 coordinate file contains a different residue at that number.
 
-The legacy command currently scans all structure models unless
+`sscna analyze` scans all structure models unless
 `--first-model` is supplied. Alternate locations are not assigned a custom
 policy; Biopython's normal disordered-atom selection behavior is used.
 
@@ -303,36 +289,12 @@ Two opt-in options help when comparing many structures:
   oxidase model, 46 of 65 primary-shell atoms around heme a were hydrogens).
   Use it whenever structures differ in whether hydrogens were deposited.
 
-Legacy CSV reports can be adapted into the same four-table contract used by
-the current API without rewriting or modifying the original files:
-
-```python
-from modules.legacy_adapter import legacy_csvs_to_analysis, legacy_csvs_to_signature
-
-tables = legacy_csvs_to_analysis(
-    "legacy/1ag6_Coord_Breakdown.csv",
-    "legacy/1ag6_Coord_Links.csv",
-    structure_id="1ag6",
-)
-signature = legacy_csvs_to_signature(
-    "legacy/1ag6_Coord_Breakdown.csv",
-    "legacy/1ag6_Coord_Links.csv",
-    structure_id="1ag6",
-)
-```
-
-The adapter understands the mixed summary/atom breakdown format and the
-separate atom-level report. Legacy `cofactor->pcs` links become canonical
-primary-shell edges with `legacy_primary_contact` provenance; they are not
-silently relabeled as validated direct coordination. Legacy reports lack
-model IDs, insertion codes, hetero flags, and element fields, so those values
-remain empty rather than being guessed.
 
 ## ML-facing residue labels
 
 `modules/ml_export.py` reshapes `analyze_structure()` tables into one
 deterministic label row per structure, site, model, and residue. It is an
-opt-in adapter and does not alter any legacy output:
+opt-in adapter and does not alter any analysis output:
 
 ```python
 from modules.coordination_api import analyze_structure
@@ -519,10 +481,7 @@ python compare_coordination_networks.py profile \
 
 The runner writes canonical signatures, JSON results, ranked CSV summaries,
 an `errors.csv` manifest, and both static PNG plus interactive HTML similarity
-heatmaps for multi-structure runs. The earlier
-`2_Single_Template_Single_Query_Network_Comparison...` and
-`3_Single_Template_Multiple_Query_Network_Comparison...` scripts remain
-available for legacy CSV/Kabsch alignment workflows; the new runner uses the
+heatmaps for multi-structure runs. The runner uses the
 current motif-aware analysis tables as its source of truth. Alignment is on by
 default in the runner: it tries cofactor anchors first, falls back to shared
 network atoms, and records the alignment method, anchor RMSD, matched atom
@@ -556,7 +515,7 @@ residue numbering.
 
 ## Stability
 
-Modules are grouped into a stable core, frozen legacy compatibility, and
+Modules are grouped into a stable core, supporting modules, and
 experimental features; see [`docs/stability.md`](docs/stability.md). Release
 changes are listed in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -594,11 +553,10 @@ modules/                         Core analysis, comparison, wire, and labeling c
   protein_wires.py, wire_viewer.py   Cofactor-to-target relay networks
   ml_export.py, assembly_policy.py, sensitivity.py   Labeling contract and splits
   substrate_seeds.py             Hypothetical substrate-point chains
-  legacy_adapter.py              Legacy CSV -> current tables
+  analyze_cli.py                 `sscna analyze` single-structure command
 benchmarks/                      Smoke, dataset-scale, and sensitivity benchmarks
 tests/                           Regression and chemistry validation tests
 reference_structures/            Public example structures
-1_Single_..._SSCNA_v0.0.2.py    Legacy single-structure CLI
 sscna_cli.py                     Stable `sscna` command (analyze, compare, wire)
 batch_coordination_network.py   Headless batch CLI
 compare_coordination_networks.py Pairwise and family-profile comparison CLI

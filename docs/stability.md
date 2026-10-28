@@ -20,14 +20,16 @@ or matplotlib installed (enforced by `tests/test_module_boundaries.py`).
 | `cofactor_classes`, `motif_registry` | cofactor families, cutoffs, motif vocabulary |
 | `structure_processing`, `chemistry`, `moieties`, `structure_utils`, `io_utils` | shell identification and chemistry tables |
 
-## Legacy compatibility
+## Command-line compatibility
 
-Frozen unless a change is explicitly approved: the versioned single-structure
-script, `sscna analyze`, `batch_coordination_network.py`, and their default
-output filenames and CSV schemas (pinned by `tests/fixtures/baseline/` and
-`tests/test_stable_cli.py`). New behavior here is opt-in only
-(`--cohesive-viewer`, `--shells`, `--per-site`, ...). The one default change in
-0.2.0 is that figure windows are not opened for non-interactive runs.
+`batch_coordination_network.py` and the table schemas of `analyze_structure()`
+are pinned by `tests/fixtures/baseline/` and the labeling-contract tests.
+
+The versioned single-structure script (`1_Single_Structure_..._v0.0.2.py`), its
+`Coord_Breakdown` report schema, the legacy comparison scripts, and the
+legacy-CSV adapter were removed. `sscna analyze` now writes the tidy tables and
+the cohesive viewer directly from `analyze_structure()`, with three shells by
+default and no sidecar configuration files or interactive prompts.
 
 ## Experimental
 
@@ -36,11 +38,11 @@ releases and they are not part of the labeling contract:
 
 - comparison and profiles: `network_comparison`, `network_alignment`,
   `comparison_runner`, `comparison_plots`, `conservation_viewer`,
-  `legacy_adapter`, `compare_coordination_networks.py`
+  `compare_coordination_networks.py`
 - protein wires: `protein_wires`, `wire_viewer`, `sscna wire`
 - substrate seeds: `substrate_seeds`, `substrate_viewer`, `sscna substrate`
 - plotting and display: `plotting` (including the cohesive viewer), `analysis`,
-  `display`
+  `display`, `analyze_cli` (`sscna analyze`)
 - typed interaction analysis: `interaction_typing`, `interaction_cli`,
   `type-coordination-interactions` (optional PDBe Arpeggio dependency)
 

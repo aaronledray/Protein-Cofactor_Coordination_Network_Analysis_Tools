@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Stable installed command-line interface for SSCNA.
 
-``sscna analyze`` intentionally delegates to the legacy single-structure
-entry point.  This keeps its defaults, sidecar configuration behavior, and
-output schema stable while providing a command name that does not depend on
-the versioned filename.  ``sscna compare`` exposes the newer pairwise and
+``sscna analyze`` builds the tidy coordination tables and the cohesive
+interactive viewer for one structure (``modules/analyze_cli.py``).
+``sscna compare`` exposes the newer pairwise and
 family-profile workflows; ``sscna wire`` exposes opt-in cofactor-to-target
 protein-wire analysis; ``sscna substrate`` traces opt-in chains from a
 hypothetical substrate point through the coordination network.
@@ -14,33 +13,9 @@ from __future__ import annotations
 
 import argparse
 import json
-from importlib.metadata import distribution, PackageNotFoundError
-import runpy
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
-
-
-LEGACY_FILENAME = "1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py"
-
-
-def _legacy_script_path() -> Path:
-    """Find the legacy source both in a checkout and in an installed wheel."""
-    checkout_path = Path(__file__).with_name(LEGACY_FILENAME)
-    if checkout_path.is_file():
-        return checkout_path
-
-    try:
-        installed_distribution = distribution("coordination-network-identifier")
-    except PackageNotFoundError as exc:
-        raise RuntimeError("The coordination-network-identifier distribution is not installed") from exc
-    installed_files = installed_distribution.files or ()
-    for installed_file in installed_files:
-        if installed_file.name == LEGACY_FILENAME:
-            candidate = Path(installed_distribution.locate_file(installed_file))
-            if candidate.is_file():
-                return candidate
-    raise RuntimeError(f"Installed legacy analyzer is missing: {LEGACY_FILENAME}")
 
 
 def _help_parser() -> argparse.ArgumentParser:
@@ -56,52 +31,10 @@ def _help_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _run_legacy_analyzer(args: Sequence[str]) -> int:
-    legacy_script = _legacy_script_path()
-
-    previous_argv = sys.argv
-    try:
-        sys.argv = [str(legacy_script), *args]
-        try:
-            runpy.run_path(str(legacy_script), run_name="__main__")
-        except SystemExit as exc:
-            if exc.code in (None, 0):
-                return 0
-            if isinstance(exc.code, int):
-                return exc.code
-            print(exc.code, file=sys.stderr)
-            return 1
-    finally:
-        sys.argv = previous_argv
-    return 0
-
-
 def _analyze(argv: Sequence[str]) -> int:
-    if any(argument in {"-h", "--help"} for argument in argv):
-        return _run_legacy_analyzer(["--help"])
+    from modules.analyze_cli import main as analyze_main
 
-    parser = argparse.ArgumentParser(
-        prog="sscna analyze",
-        description=(
-            "Run the legacy single-structure analyzer with a stable command name. "
-            "All legacy options are forwarded unchanged."
-        ),
-        add_help=False,
-    )
-    parser.add_argument("--input", help="Input PDB/mmCIF structure.")
-    parser.add_argument(
-        "--template",
-        help="Legacy alias for --input; retained for compatibility.",
-    )
-    parsed, forwarded = parser.parse_known_args(list(argv))
-
-    if parsed.input and parsed.template:
-        parser.error("use only one of --input or --template")
-    structure = parsed.input or parsed.template
-    if not structure:
-        parser.error("the following argument is required: --input")
-
-    return _run_legacy_analyzer(["--template", structure, *forwarded])
+    return analyze_main(list(argv))
 
 
 def _parse_wire_target(value: str) -> Dict[str, Any]:

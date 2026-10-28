@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+### Removed (breaking)
+- The legacy single-structure script (`1_Single_Structure_..._SSCNA_v0.0.2.py`), the legacy
+  comparison scripts (`2_...STSQNC`, `3_...STMQNC`), and `modules/legacy_adapter.py`.
+  The `Coord_Breakdown` report schema, sidecar configuration files, interactive prompts,
+  static PNG plots, the `Residues_of_Interest` mode, and the `--mode`/`--cohesive-viewer`
+  options are gone.
+
+### Changed (breaking)
+- `sscna analyze` is now implemented in `modules/analyze_cli.py` on top of
+  `analyze_structure()`. It writes `Coordination_Residues.csv`, `Coordination_Atoms.csv`,
+  `Coord_Links.csv`, `Coord_Contacts.csv`, and the cohesive viewer
+  (`coordination_network.html`) with three shells by default; `--no-plots` writes the
+  tables only and `--output-dir` sets the output directory.
+
+### Added
+- Opt-in Arpeggio typed-interaction layer (`modules/interaction_typing.py`,
+  `type-coordination-interactions`) and an `--external-residue-network` overlay for the
+  cohesive viewer.
+
 ## 0.2.1
 
 ### Added

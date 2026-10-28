@@ -20,49 +20,10 @@ class StableCliTests(unittest.TestCase):
             f"{x:8.3f}{y:8.3f}{z:8.3f}  1.00 20.00          {element:>2s}\n"
         )
 
-    def test_analyze_wrapper_preserves_legacy_no_plots_outputs(self):
-        with tempfile.TemporaryDirectory() as directory:
-            completed = subprocess.run(
-                [
-                    sys.executable,
-                    str(ROOT / "sscna_cli.py"),
-                    "analyze",
-                    "--input",
-                    str(PLASTOCYANIN),
-                    "--cofactor",
-                    "CU",
-                    "--distance",
-                    "3.6",
-                    "--exclude-moieties",
-                    "alanine_sidechain",
-                    "--mode",
-                    "Coord_Network",
-                    "--no-plots",
-                ],
-                cwd=directory,
-                env={
-                    **os.environ,
-                    "MPLCONFIGDIR": str(Path(directory) / "mpl-cache"),
-                    "XDG_CACHE_HOME": str(Path(directory) / "cache"),
-                },
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            output_dir = Path(directory) / "SSCNA_output"
-            self.assertTrue((output_dir / "1ag6.cif_Coord_Breakdown.csv").is_file())
-            self.assertTrue((output_dir / "1ag6.cif_Coord_Links.csv").is_file())
-            self.assertFalse((output_dir / "1ag6_coordination_network.html").exists())
-
     def _run_analyze(self, directory, *extra):
         completed = subprocess.run(
-            [
-                sys.executable, str(ROOT / "sscna_cli.py"), "analyze",
-                "--input", str(PLASTOCYANIN), "--cofactor", "CU", "--distance", "3.6",
-                "--exclude-moieties", "alanine_sidechain", "--mode", "Coord_Network",
-                "--compact-html", *extra,
-            ],
+            [sys.executable, str(ROOT / "sscna_cli.py"), "analyze", "--input", str(PLASTOCYANIN),
+             "--cofactor", "CU", "--distance", "3.6", "--compact-html", *extra],
             cwd=directory,
             env={**os.environ, "MPLBACKEND": "Agg",
                  "MPLCONFIGDIR": str(Path(directory) / "mpl-cache"),
@@ -72,28 +33,34 @@ class StableCliTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         return {path.name for path in (Path(directory) / "SSCNA_output").iterdir()}
 
-    def test_default_run_keeps_legacy_output_file_set(self):
+    def test_default_run_writes_tidy_tables_and_cohesive_viewer(self):
         with tempfile.TemporaryDirectory() as directory:
             names = self._run_analyze(directory)
         self.assertEqual(
             names,
             {
-                "1ag6.cif_Coord_Breakdown.csv",
-                "1ag6.cif_Coord_Breakdown_atoms.csv",
+                "1ag6.cif_Coordination_Residues.csv",
+                "1ag6.cif_Coordination_Atoms.csv",
                 "1ag6.cif_Coord_Links.csv",
-                "1ag6.cif_1_static_element_coloring_mode_both.png",
-                "1ag6.cif_1_static_pcs_scs_mode_both.png",
-                "1ag6.cif_1_template_coordination_network.html",
+                "1ag6.cif_Coord_Contacts.csv",
+                "1ag6.cif_coordination_network.html",
             },
         )
 
-    def test_cohesive_viewer_is_opt_in(self):
+    def test_no_plots_skips_the_viewer(self):
         with tempfile.TemporaryDirectory() as directory:
-            names = self._run_analyze(directory, "--cohesive-viewer")
-        self.assertIn("1ag6.cif_coordination_network.html", names)
+            names = self._run_analyze(directory, "--no-plots")
+        self.assertNotIn("1ag6.cif_coordination_network.html", names)
         self.assertIn("1ag6.cif_Coord_Contacts.csv", names)
-        self.assertIn("1ag6.cif_Coordination_Atoms.csv", names)
-        self.assertNotIn("1ag6.cif_1_template_coordination_network.html", names)
+
+    def test_missing_structure_is_an_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            completed = subprocess.run(
+                [sys.executable, str(ROOT / "sscna_cli.py"), "analyze", "--input", "nope.cif", "--cofactor", "CU"],
+                cwd=directory, capture_output=True, text=True, check=False,
+            )
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("not found", completed.stderr)
 
     def test_compare_subcommand_dispatches_to_pairwise_runner(self):
         with tempfile.TemporaryDirectory() as directory:

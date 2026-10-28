@@ -74,7 +74,7 @@ class DisplayDecisionTests(unittest.TestCase):
         self.assertEqual((plt.shown, FakeFigure.shown), (1, 1))
 
 
-class LegacyRunDisplayTests(unittest.TestCase):
+class AnalyzeRunDisplayTests(unittest.TestCase):
     def _run(self, directory, *extra):
         marker = Path(directory) / "browser_called"
         launcher = Path(directory) / "browser.py"
@@ -86,7 +86,7 @@ class LegacyRunDisplayTests(unittest.TestCase):
         launcher.chmod(0o755)
         done = subprocess.run(
             [sys.executable, str(ROOT / "sscna_cli.py"), "analyze", "--input", str(PLASTOCYANIN),
-             "--cofactor", "CU", "--mode", "Coord_Network", "--compact-html", *extra],
+             "--cofactor", "CU", "--compact-html", *extra],
             cwd=directory, capture_output=True, text=True, timeout=240,
             env={**os.environ, "MPLBACKEND": "Agg", "BROWSER": f"{launcher} %s &",
                  "MPLCONFIGDIR": str(Path(directory) / "mpl")},
@@ -99,8 +99,8 @@ class LegacyRunDisplayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             opened, files = self._run(directory)
         self.assertFalse(opened)
-        self.assertIn("1ag6.cif_1_template_coordination_network.html", files)
-        self.assertEqual(len(files), 6)
+        self.assertIn("1ag6.cif_coordination_network.html", files)
+        self.assertEqual(len(files), 5)
 
     def test_no_show_flag_and_show_override(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -109,7 +109,7 @@ class LegacyRunDisplayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             opened, files = self._run(directory, "--show")
         self.assertTrue(opened)
-        self.assertEqual(len(files), 6)
+        self.assertEqual(len(files), 5)
 
 
 if __name__ == "__main__":

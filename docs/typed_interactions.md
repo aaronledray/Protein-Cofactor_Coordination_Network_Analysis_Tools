@@ -13,7 +13,7 @@ type-coordination-interactions structure.cif --output typed_output/
 type-coordination-interactions structure_1.cif structure_2.cif --mapped-edges mapped_edges.csv --output typed_batch/
 ```
 
-The legacy SSCNA command, distance contacts, cofactor exclusions, CSV schemas,
+The `sscna analyze` command, distance contacts, cofactor exclusions, CSV schemas,
 and existing fixture outputs are not changed. Arpeggio's native JSON is retained
 alongside `atom_interaction_evidence.csv`, `direct_protein_protein_interactions.csv`,
 `protein_cofactor_interactions.csv`, `water_endpoint_interactions.csv`,

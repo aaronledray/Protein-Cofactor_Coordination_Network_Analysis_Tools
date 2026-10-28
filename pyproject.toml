@@ -30,11 +30,6 @@ py-modules = [
   "sscna_cli",
 ]
 
-[tool.setuptools.data-files]
-"share/coordination-network-identifier" = [
-  "1_Single_Structure_Cofactor_Network_Analysis_SSCNA_v0.0.2.py",
-]
-
 [project.scripts]
 sscna = "sscna_cli:main"
 compare-coordination-networks = "compare_coordination_networks:main"
