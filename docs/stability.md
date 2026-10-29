@@ -46,7 +46,8 @@ releases and they are not part of the labeling contract:
 - typed interaction analysis: `interaction_typing`, `interaction_cli`,
   `type-coordination-interactions` (optional PDBe Arpeggio dependency)
 - conserved interactions: `conserved_interactions` (contacts, cofactor features, water bridges, relay
-  links, the sequence vote, anchor audit) and `protonation` (optional PROPKA and `reduce`)
+  links, the sequence vote, anchor audit) and `protonation` (optional PROPKA and `reduce`), `conserved_wires` (path signatures and
+  independent routes across structure sets)
 
 Wire and substrate results are structural hypotheses, not rate, binding, or
 reactivity calculations.

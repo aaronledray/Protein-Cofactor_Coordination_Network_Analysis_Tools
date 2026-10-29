@@ -368,7 +368,7 @@ of a structure set, and types their chemistry: residue-residue contacts (closest
 N/O pair, hydrophobic, ring-atom, ionic), contacts to named cofactor features, residues bridged to a feature
 by one modeled water, hydrogen-bond links through waters and side chains, and the one-vote-per-sequence
 conservation rule, plus an audit that flags structures whose residue correspondence misplaces a known
-anchor. `modules.protonation` adds optional PROPKA pKa prediction, `reduce` hydrogens, and directional
+anchor. `modules.conserved_wires` follows the specific wires (shortest paths through residues and waters, and independent routes) across a structure set. `modules.protonation` adds optional PROPKA pKa prediction, `reduce` hydrogens, and directional
 hydrogen-bond geometry. Both are experimental; see `docs/conserved_interactions.md` (inputs, rules,
 validation against the heme-copper oxidase analysis).
 

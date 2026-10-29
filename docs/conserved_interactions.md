@@ -29,6 +29,21 @@ structure file.
 | `chemistry_summary` | Counts of conserved contacts by conserved chemistry class |
 | `anchor_audit`, `misaligned_sequences` | Flag structures whose correspondence puts an anchor residue (for example the axial histidine) far from its site |
 
+## Wires across structure sets
+
+`modules.conserved_wires` (experimental) asks which *wires* recur, not only which residues are reached.
+`relay_graph` builds a directed hydrogen-bond-capable graph for one structure (source atoms, modeled waters, and
+residues by position; a residue passes the wire on only if it was reached through a side-chain N/O atom, a
+residue reached through its backbone only is a terminal). `shortest_signatures` lists the shortest paths to a
+target as tuples such as `("w", 404)` (source, water, residue 404); `disjoint_path_count` counts vertex-disjoint
+paths (each residue and water used once); `conserved_wires` runs these over a structure set and votes
+reach (within k links), each signature, and reports independent-path counts per target and group. Signatures
+treat waters as interchangeable (`w`), since modeled waters have no shared identity across structures. Several
+start atoms (for example four propionate oxygens) raise the independent-path count compared with a
+single-atom source. In the oxidase comparison it shows that Asp404 is reached by two conserved wires (a direct
+link through His403 and a one-water link), His326 by one conserved one-water wire, and His325 by alternative
+routes none of which is conserved alone.
+
 ## The alignment audit
 
 A residue correspondence that is wrong in one region makes every contact there look absent in the
@@ -56,7 +71,7 @@ On the 253 structures (55 sequences) of the oxidase comparison, with positions f
 functions reproduce the manuscript analysis exactly: the same 484 conserved contacts (no extra, none
 missing), every chemistry class identical for every contact, the same conserved cofactor contacts
 (iron, CuB, propionate), the same water bridges, and the same hydrogen-bond-link sets at one, two, and
-three links. The check is `manuscript/controls/cni_validation.py` in the manuscript repository.
+three links. The check is `manuscript/controls/cni_validation.py` in the manuscript repository; the link-count sets of `conserved_wires` agree with those of `relay_steps` (one to three links and the six-link Trp272 set).
 
 ## Limits
 
