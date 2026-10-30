@@ -113,7 +113,10 @@ def load_atoms(path: str, chain_id: str, position_map: Optional[Mapping[Tuple[in
         position = key[0] if position_map is None else position_map.get(key)
         if position is None:
             continue
-        for atom in residue:
+        # get_unpacked_list() yields each conformer of a disordered atom; iterating the residue
+        # would give one DisorderedAtom whose altloc is that of the highest-occupancy conformer,
+        # so the atom would vanish whenever B outweighs A.
+        for atom in residue.get_unpacked_list():
             if atom.element.upper() in ("H", "D") or atom.get_altloc() not in (" ", "A"):
                 continue
             x, y, z = (float(v) for v in atom.coord)

@@ -157,6 +157,31 @@ class LoadTests(unittest.TestCase):
         contacts = ci.residue_contacts(atoms)
         self.assertGreater(len(contacts), 100)
 
+    def test_load_atoms_keeps_the_a_conformer_when_b_has_higher_occupancy(self):
+        import tempfile
+        from pathlib import Path
+
+        def line(serial, name, alt, res, num, x, occ, element):
+            return (f"ATOM  {serial:5d} {name:<4s}{alt}{res:>3s} A{num:4d}    {x:8.3f}{0.0:8.3f}{0.0:8.3f}{occ:6.2f}{10.0:6.2f}          {element:>2s}\n")
+
+        pdb = "".join([
+            line(1, "N", " ", "SER", 1, 0.0, 1.0, "N"),
+            line(2, "CA", " ", "SER", 1, 1.5, 1.0, "C"),
+            line(3, "OG", "A", "SER", 1, 2.0, 0.30, "O"),
+            line(4, "OG", "B", "SER", 1, 9.0, 0.70, "O"),
+            line(5, "N", " ", "GLY", 2, 3.0, 1.0, "N"),
+            line(6, "CA", " ", "GLY", 2, 4.5, 1.0, "C"),
+            "END\n",
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "alt.pdb"
+            path.write_text(pdb)
+            atoms = ci.load_atoms(path, "A")
+        og = atoms[(atoms["position"] == 1) & (atoms["atom"] == "OG")]
+        self.assertEqual(len(og), 1)
+        self.assertAlmostEqual(float(og.iloc[0]["x"]), 2.0)
+        self.assertEqual(len(atoms), 6 - 1)
+
 
 class AuditTests(unittest.TestCase):
     def test_misplaced_anchor_is_flagged_by_sequence(self):

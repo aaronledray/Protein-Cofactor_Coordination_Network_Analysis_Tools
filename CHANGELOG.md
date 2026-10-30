@@ -16,6 +16,9 @@
   (`coordination_network.html`) with three shells by default; `--no-plots` writes the
   tables only and `--output-dir` sets the output directory.
 
+### Fixed
+- `conserved_interactions.load_atoms` dropped an atom entirely when its highest-occupancy conformer was not the blank or `A` conformer, because Biopython reports the altloc of that conformer for a disordered atom. It now keeps the `A` (or only) conformer of every atom, as documented. Results on single-conformer atoms are unchanged; the heme-copper oxidase comparison, which does not use this loader, is unaffected.
+
 ### Added
 - Conserved-interaction analysis (`modules/conserved_interactions.py`, experimental): typed residue-residue contacts, cofactor-feature contacts, single-water bridges, hydrogen-bond link counts through waters and side chains, the one-vote-per-sequence conservation rule, and an anchor audit for misaligned correspondences; reproduces the heme-copper oxidase comparison exactly (`docs/conserved_interactions.md`).
 - Water-aware wires across structure sets (`modules/conserved_wires.py`, experimental): relay graph per structure, shortest-path signatures through residues and waters, vertex-disjoint path counts, and the one-vote-per-sequence vote of reach, signatures and independent routes.
