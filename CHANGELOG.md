@@ -19,7 +19,11 @@
 ### Fixed
 - `conserved_interactions.load_atoms` dropped an atom entirely when its highest-occupancy conformer was not the blank or `A` conformer, because Biopython reports the altloc of that conformer for a disordered atom. It now keeps the `A` (or only) conformer of every atom, as documented. Results on single-conformer atoms are unchanged; the heme-copper oxidase comparison, which does not use this loader, is unaffected.
 
+- `conserved_interactions.load_atoms` set `seq_index` from the order of observed residues, so residues on either side of an unobserved stretch or a skipped hetero residue (for example a selenomethionine) counted as sequence neighbors and their contact was dropped. `seq_index` now follows the residue numbering. In the heme-copper oxidase set, 13 of 253 structures have such breaks.
+- `conserved_interactions.load_atoms` dropped atoms that have no `A` or blank conformer (only `B`, `C`, ...). It now keeps the lowest-lettered conformer. One oxidase structure (7XMB) lost 14 residues (109 atoms) this way.
+
 ### Added
+- `conserved_interactions.backbone_only_audit` (experimental) flags backbone-only models (more than half of the non-Gly/Ala residues with at most five heavy atoms) before voting, alongside `anchor_audit`.
 - Conserved-interaction analysis (`modules/conserved_interactions.py`, experimental): typed residue-residue contacts, cofactor-feature contacts, single-water bridges, hydrogen-bond link counts through waters and side chains, the one-vote-per-sequence conservation rule, and an anchor audit for misaligned correspondences; reproduces the heme-copper oxidase comparison exactly (`docs/conserved_interactions.md`).
 - Water-aware wires across structure sets (`modules/conserved_wires.py`, experimental): relay graph per structure, shortest-path signatures through residues and waters, vertex-disjoint path counts, and the one-vote-per-sequence vote of reach, signatures and independent routes.
 - Optional protonation helpers (`modules/protonation.py`, experimental): PROPKA pKa, `reduce` hydrogens, directional hydrogen-bond geometry, carboxylate O...O distances; `pip install .[protonation]` installs PROPKA.

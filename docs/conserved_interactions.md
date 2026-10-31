@@ -49,8 +49,14 @@ routes none of which is conserved alone.
 A residue correspondence that is wrong in one region makes every contact there look absent in the
 affected sequences, which caps conservation below any support threshold. Run `anchor_audit` with a
 residue that must lie next to a known site (the metal-binding histidine and the metal) before voting,
-and decide whether to drop the flagged sequences. In the oxidase comparison eight of 63 sequences failed
-this check.
+and decide whether to drop the flagged sequences. In the oxidase comparison eight of the 63 sequences of the
+archived sample failed this check.
+
+`backbone_only_audit` flags structures that are backbone-only models: more than half of the mapped residues
+other than Gly and Ala have at most five distinct heavy atoms (the default). Such a structure cannot show a
+side-chain contact, so each side-chain contact reads as absent for its sequence. In the oxidase comparison four
+structures (5GPN, 5J4Z, 5J7Y, 8GZU) score 1.0 and every other structure 0.034 or less. Neither audit runs
+inside `conserved_contacts`; call them before voting and drop the flagged structures or sequences.
 
 ## Protonation and hydrogen-bond geometry (optional tools)
 
@@ -67,11 +73,25 @@ only, protein only) alongside any value.
 
 ## Validation
 
-On the 253 structures (55 sequences) of the oxidase comparison, with positions from the alignment, the
-functions reproduce the manuscript analysis exactly: the same 484 conserved contacts (no extra, none
-missing), every chemistry class identical for every contact, the same conserved cofactor contacts
+On the 249 structures (54 sequences: A 31, B1 18, C 5) of the oxidase comparison, with positions from the
+alignment, the functions reproduce the manuscript analysis exactly: the same 490 conserved contacts (no extra,
+none missing), every chemistry class identical for every contact, the same conserved cofactor contacts
 (iron, CuB, propionate), the same water bridges, and the same hydrogen-bond-link sets at one, two, and
 three links. The check is `manuscript/controls/cni_validation.py` in the manuscript repository; the link-count sets of `conserved_wires` agree with those of `relay_steps` (one to three links and the six-link Trp272 set).
+The earlier figures (253 structures, 55 sequences, 484 contacts) included the four backbone-only models.
+The check builds its atom table from the manuscript's own residue map, not with `load_atoms`, so it does not test
+the loader; the rules in the next section are covered by `tests/test_conserved_interactions.py`.
+
+## Loading structures
+
+`load_atoms(path, chain, position_map)` reads one chain of the first model (`model_index`) with Biopython. For
+mmCIF files the chain and residue numbers are the author's (`auth_asym_id`, `auth_seq_id`, with
+`pdbx_PDB_ins_code`), so `position_map` keys are `(author number, insertion code)`. Residues without a map
+entry are skipped. Water, ligands, and any other hetero residue (including modified amino acids such as MSE)
+are not loaded; cofactor features and waters come in through the `features` and `waters` tables. Hydrogens
+are dropped. Of an atom with alternate locations the first conformer is kept (`A` when there is one, otherwise the lowest letter). `seq_index` follows the
+residue numbering, so unobserved residues and skipped hetero residues count as sequence steps. Choosing
+the chain, removing duplicate chains, and building the position map are the caller's.
 
 ## Limits
 

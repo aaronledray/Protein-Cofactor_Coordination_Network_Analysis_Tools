@@ -182,6 +182,50 @@ class LoadTests(unittest.TestCase):
         self.assertAlmostEqual(float(og.iloc[0]["x"]), 2.0)
         self.assertEqual(len(atoms), 6 - 1)
 
+    def test_load_atoms_keeps_the_first_conformer_when_there_is_no_a(self):
+        import tempfile
+        from pathlib import Path
+
+        def line(serial, name, alt, num, x, occ, element):
+            return (f"ATOM  {serial:5d} {name:<4s}{alt}SER A{num:4d}    {x:8.3f}{0.0:8.3f}{0.0:8.3f}{occ:6.2f}{10.0:6.2f}          {element:>2s}\n")
+
+        pdb = "".join([line(1, "N", " ", 1, 0.0, 1.0, "N"), line(2, "OG", "B", 1, 2.0, 0.4, "O"), line(3, "OG", "C", 1, 9.0, 0.6, "O"), "END\n"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "bc.pdb"
+            path.write_text(pdb)
+            atoms = ci.load_atoms(path, "A")
+        og = atoms[atoms["atom"] == "OG"]
+        self.assertEqual(len(og), 1)
+        self.assertAlmostEqual(float(og.iloc[0]["x"]), 2.0)
+
+    def test_seq_index_counts_unobserved_and_hetero_residues_as_sequence_steps(self):
+        import tempfile
+        from pathlib import Path
+
+        def line(serial, name, res, num, x, y=0.0, rec="ATOM  "):
+            return f"{rec}{serial:5d} {name:<4s} {res:>3s} A{num:4d}    {x:8.3f}{y:8.3f}{0.0:8.3f}{1.0:6.2f}{10.0:6.2f}          {'C':>2s}\n"
+
+        pdb = "".join([
+            line(1, "CB", "LEU", 10, 0.0),
+            line(2, "CB", "VAL", 15, 3.8),                       # 11-14 unobserved: 5 apart in sequence
+            line(3, "CB", "LEU", 20, 0.0, 30.0),
+            line(4, "CB", "MSE", 21, 0.0, 39.0, rec="HETATM"),   # skipped hetero residue between 20 and 22
+            line(5, "CB", "VAL", 22, 3.8, 30.0),
+            line(6, "CB", "ILE", 30, 0.0, 60.0),
+            line(7, "CB", "ALA", 31, 3.8, 60.0),                 # consecutive: neighbors, excluded
+            "END\n",
+        ])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "gap.pdb"
+            path.write_text(pdb)
+            atoms = ci.load_atoms(path, "A")
+        index = atoms.groupby("position")["seq_index"].first().to_dict()
+        self.assertEqual(index[15] - index[10], 5)
+        self.assertEqual(index[22] - index[20], 2)
+        self.assertEqual(index[31] - index[30], 1)
+        pairs = {(r.position_a, r.position_b) for r in ci.residue_contacts(atoms).itertuples()}
+        self.assertEqual(pairs, {(10, 15), (20, 22)})
+
 
 class AuditTests(unittest.TestCase):
     def test_misplaced_anchor_is_flagged_by_sequence(self):
@@ -197,6 +241,23 @@ class AuditTests(unittest.TestCase):
         self.assertFalse(audit.loc["bad", "ok"])
         self.assertFalse(audit.loc["gone", "ok"])
         self.assertEqual(ci.misaligned_sequences(audit.reset_index()), ["s2", "s3"])
+
+    def test_backbone_only_structures_are_flagged(self):
+        side = ["CB", "CG", "CD1", "CD2"]
+        rows = []
+        for sid, atoms_per in (("full", ["N", "CA", "C", "O"] + side), ("trunc", ["N", "CA", "C", "O", "CB"])):
+            for pos in range(1, 7):
+                rows += [(sid, pos, pos, "LEU", a, a[0], float(pos), 0.0, 0.0) for a in atoms_per]
+            rows += [(sid, 7, 7, "GLY", a, a[0], 7.0, 0.0, 0.0) for a in ("N", "CA", "C", "O")]   # Gly and Ala do not count
+        rows += [("gly_only", 1, 1, "GLY", "CA", "C", 0.0, 0.0, 0.0)]
+        audit = ci.backbone_only_audit(atoms_frame(rows)).set_index("structure_id")
+        self.assertFalse(audit.loc["full", "backbone_only"])
+        self.assertTrue(audit.loc["trunc", "backbone_only"])
+        self.assertEqual(audit.loc["trunc", "n_residues"], 6)
+        self.assertTrue(audit.loc["gly_only", "backbone_only"])      # nothing but Gly/Ala is mapped: no side-chain evidence
+        half = atoms_frame([("h", p, p, "LEU", a, a[0], float(p), 0.0, 0.0) for p in (1, 2) for a in ["N", "CA", "C", "O", "CB", "CG"]]
+                           + [("h", p, p, "LEU", a, a[0], float(p), 0.0, 0.0) for p in (3, 4) for a in ["N", "CA", "C", "O", "CB"]])
+        self.assertFalse(ci.backbone_only_audit(half).iloc[0]["backbone_only"])   # exactly half is not more than half
 
 
 if __name__ == "__main__":

@@ -20,7 +20,9 @@ structure file and a position map):
   required in every group;
 * :func:`anchor_audit` -- flags structures whose correspondence puts a known anchor
   residue far from its site (a misaligned region), which would otherwise count as
-  missing contacts.
+  missing contacts;
+* :func:`backbone_only_audit` -- flags backbone-only models, which cannot show a
+  side-chain contact.
 
 Input tables
 ------------
@@ -95,8 +97,12 @@ def load_atoms(path: str, chain_id: str, position_map: Optional[Mapping[Tuple[in
 
     ``position_map`` maps ``(residue_number, insertion_code)`` to the shared position label
     (for example an alignment column); residues without an entry are skipped, and with no
-    map the residue number is the position. ``seq_index`` is the residue's order among the
-    chain's amino-acid residues. Altlocs other than blank or ``A`` and hydrogens are dropped.
+    map the residue number is the position. ``seq_index`` follows the residue numbering, so
+    residues that are unobserved or skipped (hetero residues such as modified amino acids) still
+    count as steps in the sequence: two residues are neighbors only when their numbers are
+    consecutive (an insertion code or a number that does not increase counts as one step).
+    Hydrogens are dropped, and an atom with alternate locations keeps its first conformer (``A`` when
+    there is one).
     """
     from .io_utils import unpack_pdb_file
 
@@ -105,20 +111,29 @@ def load_atoms(path: str, chain_id: str, position_map: Optional[Mapping[Tuple[in
     sid = structure_id or Path(path).stem
     rows = []
     order = 0
+    previous = None
     for residue in model[chain_id]:
         if residue.id[0] != " ":
             continue
-        order += 1
-        key = (int(residue.id[1]), residue.id[2].strip())
+        number = int(residue.id[1])
+        order += 1 if previous is None or number <= previous else number - previous
+        previous = number
+        key = (number, residue.id[2].strip())
         position = key[0] if position_map is None else position_map.get(key)
         if position is None:
             continue
         # get_unpacked_list() yields each conformer of a disordered atom; iterating the residue
         # would give one DisorderedAtom whose altloc is that of the highest-occupancy conformer,
         # so the atom would vanish whenever B outweighs A.
+        # Each atom keeps its first conformer (blank, else the lowest letter, which is A whenever there is one).
+        chosen: Dict[str, object] = {}
         for atom in residue.get_unpacked_list():
-            if atom.element.upper() in ("H", "D") or atom.get_altloc() not in (" ", "A"):
+            if atom.element.upper() in ("H", "D"):
                 continue
+            kept = chosen.get(atom.get_id())
+            if kept is None or atom.get_altloc() < kept.get_altloc():
+                chosen[atom.get_id()] = atom
+        for atom in chosen.values():
             x, y, z = (float(v) for v in atom.coord)
             rows.append((sid, position, order, residue.resname.strip().upper(), atom.get_id(), atom.element.upper(), x, y, z))
     return pd.DataFrame(rows, columns=["structure_id", "position", "seq_index", "resname", "atom", "element", "x", "y", "z"])
@@ -426,6 +441,28 @@ def misaligned_sequences(audit: pd.DataFrame) -> List[str]:
     if "sequence_id" not in audit.columns:
         raise ValueError("pass structures to anchor_audit so sequence ids are available")
     return sorted(audit.loc[~audit["ok"], "sequence_id"].dropna().unique().tolist())
+
+
+def backbone_only_audit(atoms: pd.DataFrame, *, max_heavy_atoms: int = 5, min_fraction: float = 0.5) -> pd.DataFrame:
+    """Flag structures that are backbone-only models (side chains absent beyond CB).
+
+    A structure is flagged when more than ``min_fraction`` of its mapped residues other than
+    Gly and Ala have at most ``max_heavy_atoms`` distinct heavy atoms. Such a model cannot show a
+    side-chain contact, so every side-chain contact reads as absent for its sequence. The
+    fraction is 1.0 when a structure maps no residue other than Gly or Ala. Returns
+    ``structure_id, n_residues, fraction_truncated, backbone_only``.
+    """
+    heavy = _heavy(atoms)
+    heavy = heavy[~heavy["resname"].str.upper().isin(["GLY", "ALA"])]
+    counts = heavy.groupby(["structure_id", "position"], sort=False)["atom"].nunique()
+    truncated = (counts <= max_heavy_atoms).groupby(level="structure_id", sort=False)
+    table = pd.DataFrame({"n_residues": truncated.size(), "fraction_truncated": truncated.mean()})
+    missing = pd.Index(atoms["structure_id"].unique()).difference(table.index)
+    if len(missing):
+        table = pd.concat([table, pd.DataFrame({"n_residues": 0, "fraction_truncated": 1.0}, index=missing)])
+    table["backbone_only"] = table["fraction_truncated"] > min_fraction
+    table.index.name = "structure_id"
+    return table.reset_index().sort_values("structure_id", ignore_index=True)
 
 
 def chemistry_summary(votes: pd.DataFrame, *, local_separation: Optional[pd.Series] = None) -> pd.DataFrame:
