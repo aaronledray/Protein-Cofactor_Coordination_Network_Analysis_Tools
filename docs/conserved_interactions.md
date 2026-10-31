@@ -4,6 +4,17 @@
 sequence of every group of a structure set, and what chemistry they have. It generalizes the analysis
 of the heme-copper oxidase comparison and uses the same rules, so results can be checked against it.
 
+## What the output means
+
+The output is a description: which contacts, with what chemistry, recur in nearly every sequence of every group of the set you gave it. It does not
+say that a conserved contact is important, that it stabilizes or enables anything, or that changing it would matter. Conservation can reflect shared
+ancestry as well as constraint; a contact can be absent from the vote because the sequences differ, the alignment is off, or one small group is
+strict (see "How stable the vote is"). The project's own TEM-1 test (reported with the design work, outside this repository, and not rerun here) was
+negative for using contact-derived directives predictively, so any directive built from this output should be worded as a description of the
+structures, with the group sizes and margins beside it, and should not claim a functional or design effect without separate evidence. The flags are
+heavy-atom geometry (`polar` is a hydrogen-bond-capable pair, not a proven bond); where a hydrogen is placed from the backbone or ring the placement is a
+model, not an observation.
+
 ## Inputs
 
 All functions take tidy tables; `load_atoms(path, chain, position_map)` builds the atom table from a
@@ -42,6 +53,25 @@ One global cutoff cannot suit every metal-donor pair (type 1 copper: Cu-N(His) a
 The windows and the donor choice come from `docs/scope_checks/03_sulfur_acceptor_survey.md`: in 2,048 atomic-resolution structures with the amide H placed from the backbone, 90% of backbone-N contacts within 3.7 A of a metal-bound Cys sulfur point the N-H at it (53% for free Cys, 48% within 3.6 A of a free Met sulfur, 19% for a disulfide Cys). Side-chain donors are weaker: with a hydrogen placed on the planar groups, the share of contacts within the window (non-disulfide Cys) that point an N-H at the sulfur is 58% for Gln NE2, 40% for Asn ND2, 32% for Trp NE1 and for Arg N, and 22% for His (as if protonated; the tautomer that works is usually only one of the two), against 73% for backbone N; hydroxyl and Lys NZ hydrogens rotate and cannot be tested, and deposited Asn, Gln and His orientations can be flipped. So `polar_s` is a capable-pair flag and `polar_s_bb` is the flag the evidence supports. Like `polar`, a flag marks a capable heavy-atom pair, not a proven hydrogen bond. `polar`, `hydrophobic` and all other columns are unchanged, and with the option off the output and the manuscript reproduction are identical.
 
 Sequence neighbors stay excluded by `min_separation`. This does not hide N-H...S bonds: with the amide hydrogens placed, the next residue's amide points its N-H at the sulfur in 1 of 269 metal-bound Cys, 3 of 925 free Cys and 18 of 271 free Met (`docs/scope_checks/03_sulfur_acceptor_survey.md`), because it is bonded through the peptide link. Other neighbor contacts can still be hidden (TODO item D).
+
+## How stable the vote is
+
+Two controls, both on the heme-copper oxidase set (54 sequences in groups A, B1 and C of 31, 18 and 5) and on 12 plastocyanins
+(`docs/scope_checks/07_shuffle_control.md`, `08_leave_one_out.md`):
+
+- **Shuffle:** permuting the position labels within each structure (geometry unchanged) leaves 0 conserved contacts in every
+  replicate for both sets (10 and 3 replicates), and the plastocyanin copper ligands are conserved in 0 of 10. Permuting only inside blocks
+  of 3 positions leaves a handful (at most 7 of 168, at most 4 of 490); blocks of 5 or more leave none. The vote needs the position labels
+  right to within a couple of residues, and it does not manufacture conservation from structures with no correspondence.
+- **One sequence at a time:** a contact survives the 90% rule with at most `floor(0.1 n)` negative sequences, so 3 of 31 in group A,
+  1 of 18 in B1 and none of 5 in C. Group C has exactly the minimum of 5 voting sequences, so all 490 conserved contacts sit at the minimum
+  and leaving out any one C sequence loses all 490 (none are lost if the minimum is relaxed for that group); equally, one scrambled or
+  atypical C sequence removes the whole set (a shuffle replicate that scrambled one sequence left 6 of 490). The three C sequences that block the most
+  contacts alone hold back 7 to 11 contacts each. In group A, 16 of the 490 have no spare negative and in B1 36. In the plastocyanins 41 of 168 have none.
+
+So a conserved contact is as reliable as the smallest group is deep. A log should carry, for every contact, the number of voting sequences
+per group and the spare negatives (the coverage column that is still open in the TODO), and should say that group C conservation means
+conserved in each of five sequences.
 
 ## Rules travel with the results
 
