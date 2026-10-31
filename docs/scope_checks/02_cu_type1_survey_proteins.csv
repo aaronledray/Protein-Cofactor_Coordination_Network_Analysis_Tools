@@ -1,0 +1,88 @@
+protein,cys_s,his_n_near,his_n_far,met_s_axial,met_s_other,amide_o,backbone_o,entries,name,organism,family
+A0A0M3U1T9,2.09,2.021,2.065,,,,,1,Laccase,Antrodiella faginea,laccase / multicopper oxidase
+A0A0M4FJ81,2.173,1.997,2.054,3.48,,,,48,Two-domain laccase,Streptomyces griseoflavus,laccase / multicopper oxidase
+A0A0S3AND7,2.236,2.074,2.116,3.141,,,,1,Laccase BP76,Neocapritermes taracua,laccase / multicopper oxidase
+A0A2R2JFS1,2.249,1.943,2.002,,,,,1,SM80.1 Vicilin,Solanum melongena,other
+A0A2W1KFF4,2.271,2.041,2.176,2.769,,,,2,AcoP,Acidithiobacillus ferrooxidans,other
+A0A3F2YLU5,2.162,2.06,2.125,,,,,2,Laccase,Cerrena,laccase / multicopper oxidase
+A0A429XVX4,2.213,2.035,2.08,3.257,,,,1,Multicopper oxidase,Bacillus freudenreichii,laccase / multicopper oxidase
+A0A6L7H6L8,2.214,2.087,2.181,2.646,,,,2,Cupredoxin 1,Bacillus anthracis str. Ames,other
+A0A939HHQ2,2.164,2.082,2.156,,,,,3,Multicopper oxidase,Arthrobacter sp. FB24,laccase / multicopper oxidase
+A0ABF7PG81,2.211,1.986,2.021,2.593,,,,2,Copper-containing nitrite reductase,Geobacillus thermodenitrificans,nitrite reductase
+A0ABX2C960,2.192,2.023,2.045,2.495,,,,26,Copper-containing nitrite reductase,Bradyrhizobium sp. ORS 375,nitrite reductase
+A2QS62,2.154,1.986,2.072,,,,,2,'Multicopper oxidase,Aspergillus niger,laccase / multicopper oxidase
+A4IL26,2.214,2.018,2.042,2.63,,,,18,Nitrite reductase,Geobacillus thermodenitrificans NG80-2,nitrite reductase
+A6X5N0,2.155,1.991,2.0,3.312,,,,1,Multi-copper Oxidase CueO,Ochrobactrum,laccase / multicopper oxidase
+A7VL37,2.2,2.008,2.032,2.549,,,,3,Blue copper protein,Hyphomicrobium denitrificans,other
+A9A2G4,2.25,2.01,2.067,,,,,4,Blue (Type 1) copper domain protein,Nitrosopumilus maritimus SCM1,other
+B2L9C1,2.202,2.008,2.045,,,,,2,Laccase,Trametes hirsuta,laccase / multicopper oxidase
+B2UHR8,2.222,2.035,2.068,2.572,,,,8,COPPER-CONTAINING NITRITE REDUCTASE,Ralstonia pickettii 12J,nitrite reductase
+B5HSR1,2.167,1.981,2.023,3.443,,,,24,Copper oxidase,Streptomyces sviceus ATCC 29083,laccase / multicopper oxidase
+C0STU6,2.207,1.971,2.062,,2.74,,,12,Multicopper oxidase,uncultured bacterium,laccase / multicopper oxidase
+E0NFS2,2.178,2.066,2.088,3.158,,,,2,Copper oxidase,Pediococcus acidilactici,laccase / multicopper oxidase
+E8PLV7,2.228,2.023,2.042,,2.997,2.04,3.571,6,Copper-containing nitrite reductase,Thermus scotoductus SA-01,nitrite reductase
+G2QG31,2.158,2.013,2.018,,,,,1,"Extracellular laccase, lcc1",Thermothelomyces thermophilus,laccase / multicopper oxidase
+H0SLX7,2.129,1.948,1.969,2.592,,,,1,Copper-containing nitrite reductase,Bradyrhizobium sp. ORS 375,nitrite reductase
+H8ZRU2,2.236,2.01,2.024,,,,,1,laccase,Botrytis aclada,laccase / multicopper oxidase
+I1VE66,2.186,2.016,2.03,,,,,34,Laccase 2,Metuloidea murashkinskyi,laccase / multicopper oxidase
+I6NAW4,2.213,2.033,2.083,2.597,,,,15,"Nitrite reductase, copper-containing",Ralstonia sp. 5_2_56FAA,nitrite reductase
+I7AL37,2.151,2.081,2.165,,,,,1,THERMUS THERMOPHILUS MULTICOPPER OXIDASE,Thermus thermophilus,laccase / multicopper oxidase
+J9PBQ8,2.129,2.018,2.035,3.334,,,3.593,1,"small laccase, multi-copper oxidase",Amycolatopsis sp. ATCC 39116,laccase / multicopper oxidase
+M1GME7,2.209,2.036,2.036,,,,,1,LACCASE,Cerrena caperata,laccase / multicopper oxidase
+O67206,2.037,1.993,2.187,3.198,,,,1,Periplasmic cell division protein (SufI),Aquifex aeolicus,other
+O68601,2.154,2.034,2.104,2.588,,,,22,DISSIMILATORY COPPER-CONTAINING NITRITE REDUCTASE,Achromobacter xylosoxidans,nitrite reductase
+P00280,2.176,1.926,2.045,3.258,,,2.966,4,AZURIN,Achromobacter xylosoxidans,azurin
+P00282,2.197,2.017,2.059,3.233,3.242,2.362,2.764,77,AZURIN,Pseudomonas aeruginosa,azurin
+P00289,2.149,1.963,2.01,2.883,,,3.467,1,PLASTOCYANIN,Spinacia oleracea,plastocyanin
+P00299,2.156,1.956,2.037,2.781,,,,7,PLASTOCYANIN,Populus nigra,plastocyanin
+P00303,2.155,1.931,1.951,2.606,,,,1,CUCUMBER BASIC PROTEIN,Cucumis sativus,other
+P04171,2.145,1.968,2.068,2.656,,,,1,PSEUDOAZURIN,Methylorubrum extorquens,pseudoazurin
+P04377,2.162,2.017,2.04,2.761,,,,8,PSEUDOAZURIN PRECURSOR,Alcaligenes faecalis,pseudoazurin
+P07030,2.152,2.007,2.047,2.845,,,,1,PROTEIN (PLASTOCYANIN),Silene latifolia subsp. alba,plastocyanin
+P07465,2.119,1.895,2.17,2.917,,,3.505,1,PLASTOCYANIN,Ulva prolifera,plastocyanin
+P07788,2.211,2.051,2.062,3.256,,,,5,SPORE COAT PROTEIN A,Bacillus subtilis,other
+P0A6Z6,2.42,2.002,2.048,,,,,4,Nickel-responsive regulator,Escherichia coli,other
+P0C178,2.184,2.03,2.086,2.744,,,3.48,2,Plastocyanin,Trichormus variabilis,plastocyanin
+P0C918,2.185,2.057,2.072,2.778,,2.356,,4,RUSTICYANIN,Acidithiobacillus ferrooxidans,rusticyanin
+P11970,2.199,2.069,2.144,2.666,,,3.519,2,"Plastocyanin B, chloroplastic",Populus nigra,plastocyanin
+P12335,2.033,2.051,2.074,2.99,,,3.342,1,PROTEIN (AZURIN ISO-2),Methylomonas sp. J,azurin
+P18068,2.114,2.017,2.024,2.891,,,,1,PLASTOCYANIN,Chlamydomonas reinhardtii,plastocyanin
+P19567,2.191,2.005,2.048,2.575,2.376,,3.538,36,PSEUDOAZURIN,Achromobacter cycloclastes,pseudoazurin
+P22364,2.162,1.984,2.045,,2.883,2.124,,11,AMICYANIN,Paracoccus denitrificans,amicyanin
+P25006,2.198,2.029,2.049,2.488,,,,48,Nitrite Reductase,Achromobacter cycloclastes,nitrite reductase
+P27197,2.195,2.019,2.032,2.843,,3.522,3.522,1,PROTEIN (AURACYANIN),Chloroflexus aurantiacus,other
+P29602,2.178,1.96,2.043,,,2.21,,1,CUCUMBER STELLACYANIN,Cucumis sativus,other
+P34097,2.124,1.921,1.953,3.013,,,3.141,2,AZURIN,Pseudomonas putida,azurin
+P36649,2.197,2.013,2.052,3.282,,,3.558,24,PROBABLE BLUE-COPPER PROTEIN YACK,Escherichia coli,other
+P38501,2.205,2.034,2.088,2.483,2.376,,,78,NITRITE REDUCTASE,Alcaligenes faecalis,nitrite reductase
+P42849,2.239,2.07,2.163,,,2.512,,2,Umecyanin,Armoracia rusticana,other
+P46444,2.159,2.024,2.086,2.845,,,,2,PLASTOCYANIN,Nostoc sp. PCC 7120 = FACHB-418,plastocyanin
+P55020,2.176,2.087,2.374,2.796,,,,1,PLASTOCYANIN,Synechococcus elongatus PCC 7942 = FACHB-805,plastocyanin
+P56274,2.18,2.064,2.084,2.689,,,,1,PLASTOCYANIN,Ulva pertusa,plastocyanin
+P56275,2.136,1.989,2.041,3.26,,,2.721,1,AZURIN II,Achromobacter xylosoxidans,azurin
+P80401,2.206,2.054,2.074,2.63,,,,6,Pseudoazurin,Paracoccus pantotrophus,pseudoazurin
+P80728,2.174,1.978,2.01,,,2.163,,4,mavicyanin,Cucurbita pepo,other
+Q12737,2.198,2.022,2.062,3.398,,2.704,3.484,7,Bilirubin oxidase,Albifimbria verrucaria,laccase / multicopper oxidase
+Q1W6B1,2.185,2.068,2.096,,,,,2,LACCASE,Coriolopsis gallica,laccase / multicopper oxidase
+Q2PAJ1,2.235,2.099,2.114,3.044,,,,1,Laccase,Zea mays,laccase / multicopper oxidase
+Q51883,2.25,2.05,2.084,2.574,,,,6,Plastocyanin,Leptolyngbya laminosa,plastocyanin
+Q53239,2.206,2.045,2.085,2.458,,,,3,Copper-containing nitrite reductase,Cereibacter sphaeroides,nitrite reductase
+Q5EBY5,2.242,2.012,2.033,,,,,2,Laccase,Lentinus tigrinus,laccase / multicopper oxidase
+Q5L1X8,2.174,2.046,2.088,2.59,,,,10,Nitrite reductase,Geobacillus kaustophilus HTA426,nitrite reductase
+Q6H9H7,2.174,2.136,2.149,,,,,1,LACCASE,Rigidoporus microporus,laccase / multicopper oxidase
+Q70KY3,2.141,1.997,2.045,,,,,6,Laccase-1,Melanocarpus albomyces,laccase / multicopper oxidase
+Q72HW2,2.168,2.075,2.125,3.572,,,,27,LACCASE,Thermus thermophilus HB27,laccase / multicopper oxidase
+Q7SIB8,2.207,1.949,2.103,2.914,,,,3,PLASTOCYANIN,Adiantum capillus-veneris,plastocyanin
+Q820S6,2.267,1.978,2.013,,,2.101,,4,NITROSOCYANIN,Nitrosomonas europaea,other
+Q82VX5,2.238,2.09,2.138,2.488,,,,6,Multicopper oxidase type 1,Nitrosomonas europaea ATCC 19718,laccase / multicopper oxidase
+Q89EJ6,2.198,2.019,2.05,2.492,,,,26,Copper-containing nitrite reductase,Bradyrhizobium diazoefficiens USDA 110,nitrite reductase
+Q9AGH8,2.289,2.012,2.097,,,,,2,D-aminoacylase,Alcaligenes faecalis,other
+Q9HDQ0,2.147,2.034,2.057,,,,,1,Laccase,Coriolopsis trogii,laccase / multicopper oxidase
+Q9UVQ2,2.266,2.03,2.131,,,,,1,LACCASE,Trametes cinnabarina,laccase / multicopper oxidase
+Q9Y780,2.191,2.026,2.069,,,,,1,LACCASE 1,Coprinopsis cinerea,laccase / multicopper oxidase
+seq:AIGPTSDLHIANKNISPDGFNRSAVLVNGTFPGPLITANK,2.217,1.963,2.132,,,,,1,Laccase,synthetic construct,laccase / multicopper oxidase
+seq:AVGPVTDIHIVNKDIAPDGFSRPSVLAGGTFPGPLITGQK,2.158,2.074,2.099,,,,,1,Laccase,Cerrena,laccase / multicopper oxidase
+seq:DDLKLPRQRVDLVAPPFVHVHEQATKQGPKIMEFKLVVQE,2.221,2.027,2.032,2.506,,,,1,Copper-containing nitrite reductase,Bradyrhizobium sp. ORS 375,nitrite reductase
+seq:MAEREFDMTIEEVTIKVAPGLDYKVFGFNGQVPGPLIHVQ,2.246,2.027,2.079,,2.759,,,3,two-domain type laccase,metagenomes,laccase / multicopper oxidase
+seq:MKALSFLTPIVTLALVAGAFASVGPVANLKIGNAAVSPDG,2.278,2.005,2.01,,,,,2,laccase,Lentinus,laccase / multicopper oxidase
+seq:MKYFTVFTALTALFAQASASAIPAVRSTLTPRQNTTASCA,2.201,2.002,2.022,3.189,,,,1,Laccase,Botrytis aclada,laccase / multicopper oxidase

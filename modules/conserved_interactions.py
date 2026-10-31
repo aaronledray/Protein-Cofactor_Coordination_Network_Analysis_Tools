@@ -32,15 +32,21 @@ exclude sequence neighbors). ``features``: ``structure_id, feature, atom, elemen
 x, y, z`` with ``kind`` in ``{"metal", "oxygen"}``. ``waters``: ``structure_id, x, y, z``.
 ``structures``: ``structure_id, group, sequence_id``.
 
-Geometry is judged from heavy atoms; no hydrogens are used, so "polar" means a
-hydrogen-bond-capable N/O pair, not a hydrogen bond (see :mod:`modules.protonation`).
+Geometry is judged from heavy atoms, so "polar" means a hydrogen-bond-capable N/O pair, not a hydrogen bond. Only
+the opt-in flags (``polar_s_geom``, the neighbor ``polar`` class) place a hydrogen from the heavy atoms of the backbone or a planar group,
+a model and not an observation (see :mod:`modules.protonation`).
 """
 
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+import inspect
+
 import numpy as np
 import pandas as pd
+
+from . import coordination_table, protonation
+from .coordination_api import METAL_ION_RESNAMES
 
 BACKBONE = frozenset({"N", "CA", "C", "O", "OXT"})
 RING_ATOMS: Dict[str, frozenset] = {
@@ -60,7 +66,25 @@ RESIDUE_CLASS = {
 }
 CONTACT_CLASSES = ("bb_bb", "bb_sc", "sc_bb", "sc_sc")
 CONTACT_FLAGS = ("polar", "polar_sc", "polar_bb_bb", "hydrophobic", "aromatic", "ionic")
+SULFUR_FLAGS = ("polar_s", "polar_s_bb", "polar_s_geom")
+# Opt-in sulfur-acceptor typing (``residue_contacts(sulfur_acceptor=True)``): acceptor atom -> largest donor...S heavy-atom
+# distance. Windows from docs/scope_checks/03_sulfur_acceptor_survey.md. A disulfide SG is never an acceptor.
+SULFUR_ACCEPTORS = {("CYS", "SG"): 3.7, ("MET", "SD"): 3.6}
+NEIGHBOR_CHEMISTRY = ("polar", "ionic")                           # residue_contacts(neighbor_contacts=True) default
+NEIGHBOR_CHEMISTRY_ALL = ("polar", "ionic", "hydrophobic", "aromatic")
+NEIGHBOR_H_MAX = 2.5            # neighbor polar pairs: H...acceptor limit when the donor's hydrogen can be placed (N-H...A >= 120 degrees too)
+NEIGHBOR_MIN_BONDS = 4          # residue_contacts(neighbor_contacts=True): bonded 1-2, 1-3 and 1-4 atom pairs are not contacts
+BOND_DISTANCE = 1.9             # heavy atoms closer than this are bonded when counting bonds
+POLAR_DISTANCE = 3.5            # residue_contacts: N/O pair for the polar flags
+CHEMISTRY_DISTANCE = 4.0        # residue_contacts: hydrophobic, aromatic and ionic windows
+SULFUR_SIDE_CHAIN_MAX = 3.6     # side-chain donors: the share pointing an N-H at the sulfur falls sharply beyond this
+# Either His ring N may carry the H (which one depends on the tautomer, unknown from heavy atoms), so both are capable
+# donors, except an N that a metal coordinates, which is deprotonated; ``metals`` supplies that exclusion.
+SULFUR_DONORS = frozenset({("SER", "OG"), ("THR", "OG1"), ("TYR", "OH"), ("ASN", "ND2"), ("GLN", "NE2"), ("ARG", "NE"),
+                           ("ARG", "NH1"), ("ARG", "NH2"), ("LYS", "NZ"), ("TRP", "NE1"), ("HIS", "ND1"), ("HIS", "NE2")})
+DISULFIDE_DISTANCE = 2.3
 FEATURE_CLASSES = ("coord", "polar", "ionic", "contact")
+TIER_COLUMNS = coordination_table.TIER_COLUMNS
 _BLOCK = 4_000_000
 
 
@@ -139,9 +163,170 @@ def load_atoms(path: str, chain_id: str, position_map: Optional[Mapping[Tuple[in
     return pd.DataFrame(rows, columns=["structure_id", "position", "seq_index", "resname", "atom", "element", "x", "y", "z"])
 
 
+def load_metals(path: str, *, structure_id: Optional[str] = None, model_index: int = 0) -> pd.DataFrame:
+    """Metal ions of one model as the ``metals`` table (``structure_id, element, x, y, z``), all chains."""
+    from .io_utils import unpack_pdb_file
+
+    structure, _ = unpack_pdb_file(str(path))
+    sid = structure_id or Path(path).stem
+    rows = []
+    for residue in list(structure)[model_index].get_residues():
+        if residue.id[0] == " " or residue.id[0] == "W":
+            continue
+        for atom in residue:
+            if atom.element.upper() in METAL_ION_RESNAMES:
+                rows.append((sid, atom.element.upper(), *(float(v) for v in atom.coord)))
+    return pd.DataFrame(rows, columns=["structure_id", "element", "x", "y", "z"])
+
+
+def _metal_coordinated(frame: pd.DataFrame, xyz: np.ndarray, metals: pd.DataFrame) -> np.ndarray:
+    """Atoms of ``frame`` that a metal coordinates: ``bond`` tier, or the global 2.8 A when the pair is not in the table."""
+    coordinated = np.zeros(len(frame), bool)
+    if metals.empty:
+        return coordinated
+    element = metals["element"].str.upper().to_numpy()
+    i, j, d = _close_pairs(xyz, metals[["x", "y", "z"]].to_numpy(float), 2.8)
+    res, name = frame["resname"].str.upper().to_numpy(), frame["atom"].to_numpy()
+    for atom, metal, distance in zip(i, j, d):
+        if coordination_table.coordination_tier(element[metal], res[atom], name[atom], float(distance)).tier in ("bond", "default"):
+            coordinated[atom] = True
+    return coordinated
+
+
+def placed_hydrogens(frame: pd.DataFrame, xyz: np.ndarray) -> np.ndarray:
+    """``(n, 2, 3)`` hydrogens placed on the planar donors of ``frame`` (NaN where there is none): see :mod:`modules.protonation`."""
+    out = np.full((len(frame), 2, 3), np.nan)
+    pos, seq = frame["position"].to_numpy(), frame["seq_index"].to_numpy()
+    res, name = frame["resname"].str.upper().to_numpy(), frame["atom"].to_numpy()
+    index = {(p, n): k for k, (p, n) in enumerate(zip(pos, name))}
+    position_of = dict(zip(seq, pos))
+    for k in range(len(frame)):
+        key = (res[k], name[k])
+        if name[k] == "N" and res[k] != "PRO":
+            previous = position_of.get(seq[k] - 1)
+            c, ca = index.get((previous, "C")), index.get((pos[k], "CA"))
+            if c is not None and ca is not None and np.linalg.norm(xyz[c] - xyz[k]) < 1.6:      # a peptide bond joins them
+                out[k, 0] = protonation.backbone_amide_hydrogen(xyz[k], xyz[c], xyz[ca])
+        elif key in protonation.RING_DONORS:
+            a, b = (index.get((pos[k], n)) for n in protonation.RING_DONORS[key])
+            if a is not None and b is not None:
+                out[k, 0] = protonation.ring_nh_hydrogen(xyz[k], xyz[a], xyz[b])
+        elif key in protonation.AMIDE_DONORS:
+            c, ref = (index.get((pos[k], n)) for n in protonation.AMIDE_DONORS[key])
+            if c is not None and ref is not None:
+                out[k] = protonation.amide_nh2_hydrogens(xyz[k], xyz[c], xyz[ref])
+    return out
+
+
+def _bond_steps(xyz: np.ndarray, members: np.ndarray, start: int) -> np.ndarray:
+    """Bonds from atom ``start`` to each atom of ``members`` (indices into ``xyz``) within one residue; inf when unreachable."""
+    local = xyz[members]
+    adjacent = np.linalg.norm(local[:, None, :] - local[None, :, :], axis=-1) <= BOND_DISTANCE
+    steps = np.full(len(members), np.inf)
+    first = int(np.nonzero(members == start)[0][0])
+    steps[first] = 0
+    frontier = [first]
+    while frontier:
+        following = []
+        for atom in frontier:
+            for other in np.nonzero(adjacent[atom] & np.isinf(steps))[0]:
+                steps[other] = steps[atom] + 1
+                following.append(int(other))
+        frontier = following
+    return steps
+
+
+def _neighbor_flags(elem, res, name, bb, a, b, d, cutoff, xyz, hydrogens, excluded) -> Dict[str, np.ndarray]:
+    """The neighbor-contact chemistry of atom pairs ``(a, b)`` at distances ``d``, one boolean array per class.
+
+    ``polar``: a hydrogen-bond pair with at least one side-chain atom: a donor (backbone N except Pro, or a side-chain atom
+    of ``SULFUR_DONORS``) and an acceptor (any O, or a His ring N) within the polar window; when the donor's hydrogen can be placed
+    it must point at the acceptor (H...A <= ``NEIGHBOR_H_MAX``, N-H...A >= 120 degrees), otherwise (hydroxyl, Lys NZ) the distance
+    decides. A donor or acceptor that a metal coordinates (``excluded``) does not count. ``ionic``: a charged side-chain pair
+    within the chemistry window. ``hydrophobic``: a C/S pair, both atoms side-chain atoms beyond C-beta, within the chemistry
+    window. ``aromatic``: a ring atom against a side-chain atom beyond C-beta, within the chemistry window. Backbone and C-beta
+    proximity between neighbors is not counted as hydrophobic or aromatic chemistry (it is set by the backbone).
+    """
+    beyond = ~bb & (name != "CB")
+    ring = np.array([n in RING_ATOMS.get(r, ()) for n, r in zip(name, res)])
+    positive = np.array([(r, n) in POSITIVE_ATOMS for n, r in zip(name, res)])
+    negative = np.array([(r, n) in NEGATIVE_ATOMS for n, r in zip(name, res)])
+    donor = (((name == "N") & (res != "PRO")) | np.array([(r, n) in SULFUR_DONORS for r, n in zip(res, name)])) & ~excluded
+    acceptor = ((elem == "O") | ((res == "HIS") & np.isin(name, ["ND1", "NE2"]))) & ~excluded
+    has_hydrogen = ~np.isnan(hydrogens[:, 0, 0])
+    near_polar, near_chemistry = d <= min(POLAR_DISTANCE, cutoff), d <= min(CHEMISTRY_DISTANCE, cutoff)
+
+    def hydrogen_bond(x, y):
+        return donor[x] & acceptor[y] & near_polar & np.where(has_hydrogen[x], _points_at(hydrogens, xyz, x, y, acceptor, NEIGHBOR_H_MAX), True)
+    return {
+        "polar": (hydrogen_bond(a, b) | hydrogen_bond(b, a)) & (~bb[a] | ~bb[b]),
+        "ionic": ((positive[a] & negative[b]) | (negative[a] & positive[b])) & near_chemistry,
+        "hydrophobic": np.isin(elem[a], ["C", "S"]) & np.isin(elem[b], ["C", "S"]) & beyond[a] & beyond[b] & near_chemistry,
+        "aromatic": ((ring[a] & beyond[b]) | (ring[b] & beyond[a])) & near_chemistry,
+    }
+
+
+def _neighbor_atom_pairs(xyz, pos, seq, name, bb, qualifies, i, j):
+    """Atom pairs ``(i, j)`` from ``qualifies`` between residues one apart in sequence that are at least ``NEIGHBOR_MIN_BONDS`` bonds apart.
+
+    The bond count runs through the peptide bond: steps from the first residue's atom to its C, one for C-N, and steps from the
+    second residue's N to its atom. Pairs are dropped when the peptide bond is absent (a gap or a missing atom) or an atom is not
+    connected to its backbone.
+    """
+    members: Dict[int, np.ndarray] = {}
+    cache: Dict[tuple, np.ndarray] = {}
+
+    def residue(s):
+        if s not in members:
+            members[s] = np.nonzero(seq == s)[0]
+        return members[s]
+
+    def atom(s, label):
+        hit = [k for k in residue(s) if name[k] == label]
+        return hit[0] if hit else None
+
+    def steps(s, start):
+        if (s, start) not in cache:
+            cache[(s, start)] = _bond_steps(xyz, residue(s), start)
+        return cache[(s, start)]
+
+    kept_i, kept_j = [], []
+    for a, b in zip(i[qualifies], j[qualifies]):
+        low, high = (a, b) if seq[a] < seq[b] else (b, a)
+        carbon, nitrogen = atom(seq[low], "C"), atom(seq[high], "N")
+        if carbon is None or nitrogen is None or np.linalg.norm(xyz[carbon] - xyz[nitrogen]) >= 1.6:
+            continue
+        before, after = steps(seq[low], carbon), steps(seq[high], nitrogen)
+        near, far = before[np.nonzero(residue(seq[low]) == low)[0][0]], after[np.nonzero(residue(seq[high]) == high)[0][0]]
+        if np.isfinite(near) and np.isfinite(far) and near + 1 + far >= NEIGHBOR_MIN_BONDS:
+            kept_i.append(a)
+            kept_j.append(b)
+    return np.array(kept_i, dtype=int), np.array(kept_j, dtype=int)
+
+
+def _points_at(hydrogens: np.ndarray, xyz: np.ndarray, donor: np.ndarray, acceptor: np.ndarray, is_acceptor: np.ndarray,
+               h_max: float = protonation.SULFUR_H_MAX) -> np.ndarray:
+    """Per pair: a hydrogen on atom ``donor[i]`` is within ``h_max`` of ``acceptor[i]`` at an angle of at least ``SULFUR_ANGLE_MIN``."""
+    result = np.zeros(len(donor), bool)
+    live = np.nonzero(is_acceptor[acceptor] & ~np.isnan(hydrogens[donor, 0, 0]))[0]
+    if len(live) == 0:
+        return result
+    h = hydrogens[donor[live]]                                               # (m, 2, 3)
+    n, s = xyz[donor[live]][:, None, :], xyz[acceptor[live]][:, None, :]
+    to_n, to_s = n - h, s - h
+    h_s = np.linalg.norm(to_s, axis=-1)
+    with np.errstate(invalid="ignore"):
+        cosine = (to_n * to_s).sum(-1) / (np.linalg.norm(to_n, axis=-1) * h_s)
+    ok = (h_s <= h_max) & (cosine <= np.cos(np.radians(protonation.SULFUR_ANGLE_MIN)))
+    result[live] = ok.any(axis=1)
+    return result
+
+
 # ----------------------------------------------------------------------------- contacts
 def residue_contacts(atoms: pd.DataFrame, *, cutoff: float = 4.0, min_distance: float = 1.9,
-                     min_separation: int = 2, chemistry: bool = True) -> pd.DataFrame:
+                     min_separation: int = 2, chemistry: bool = True, sulfur_acceptor: bool = False,
+                     metals: Optional[pd.DataFrame] = None, neighbor_contacts: bool = False,
+                     neighbor_chemistry: Sequence[str] = NEIGHBOR_CHEMISTRY) -> pd.DataFrame:
     """Residue-residue contacts per structure with typed chemistry.
 
     A pair of residues is in contact when its closest heavy atoms are between
@@ -153,10 +338,48 @@ def residue_contacts(atoms: pd.DataFrame, *, cutoff: float = 4.0, min_distance: 
     either residue within 4.0 Å of any heavy atom of the other), ``ionic`` (Lys/Arg
     N to Asp/Glu O within 4.0 Å); ``closest`` is the backbone/side-chain class of the
     single closest atom pair.
+
+    ``sulfur_acceptor=True`` (opt-in; needs ``chemistry``) adds ``polar_s``, ``polar_s_bb`` and ``polar_s_geom``.
+    ``polar_s``: a hydrogen-bond-capable donor (backbone N except Pro, or a side-chain N/OH listed in
+    ``SULFUR_DONORS``) within ``SULFUR_ACCEPTORS`` of a Cys SG (3.7 Å) or Met SD (3.6 Å) in another residue,
+    with side-chain donors capped at ``SULFUR_SIDE_CHAIN_MAX`` (3.6 Å). ``polar_s_bb`` keeps only backbone-N
+    donors. ``polar_s_geom`` places the hydrogen from the heavy atoms (backbone amide, Trp NE1, Arg, Asn/Gln
+    amide, and a His ring N as if protonated, either tautomer) and requires H...S <= 2.9 Å and N-H...S >= 120°;
+    it does not test hydroxyl or Lys NZ donors, whose hydrogens rotate. A backbone amide needs the preceding
+    residue in the table (seq_index - 1) to place its H. Evidence: the N-H...S survey in atomic-resolution
+    structures (docs/scope_checks/03_sulfur_acceptor_survey.md). A disulfide SG is never an acceptor. A donor atom that a metal
+    coordinates is deprotonated and is not a donor: ``metals`` (``structure_id, element, x, y, z``, see
+    :func:`load_metals`) excludes every N/O within the ``bond`` tier of :mod:`modules.coordination_table`
+    of a metal (a pair not in the table follows the global 2.8 Å); without ``metals`` nothing is
+    excluded, so pass it for any structure with metal ions. Like ``polar``, a flag marks a
+    capable pair, not a proven hydrogen bond, and ``polar``, ``hydrophobic`` and the other columns are
+    unchanged. Sequence neighbors stay excluded by ``min_separation`` unless ``neighbor_contacts`` is set.
+
+    ``neighbor_contacts=True`` (opt-in; needs ``chemistry`` and ``min_separation`` above 1) adds the contacts
+    between residues one apart in sequence that the separation rule hides, judged per atom pair instead of
+    per residue pair. A pair of atoms counts when it is at least ``NEIGHBOR_MIN_BONDS`` (4) bonds apart
+    through the peptide bond (bonded 1-2, 1-3 and 1-4 atoms never count) and belongs to one of the classes in
+    ``neighbor_chemistry`` (default ``polar`` and ``ionic``; ``NEIGHBOR_CHEMISTRY_ALL`` adds ``hydrophobic`` and
+    ``aromatic``): ``polar`` is a hydrogen bond with at least one side-chain atom (a donor to an acceptor within
+    3.5 Å, and where the donor's hydrogen can be placed it must point at the acceptor; a Pro N and an atom a metal
+    coordinates never count), ``ionic`` a charged side-chain pair, ``hydrophobic`` a C/S pair with both atoms beyond
+    C-beta, ``aromatic`` a ring atom against a side-chain atom beyond C-beta (see :func:`_neighbor_flags`; a ring beside the
+    neighbor's backbone is not counted, it would mark every aromatic residue).
+    A residue pair with such an atom pair gets a row with ``min_distance`` and ``closest`` of its closest qualifying
+    atom pair, ``n_contacts`` the number of qualifying pairs, the flags of the selected classes, the others and the
+    sulfur flags False, and the extra column ``neighbor`` True (False on every other row). Evidence:
+    docs/scope_checks/05_sequence_neighbors_survey.md and 06_neighbor_chemistry_survey.md.
     """
+    if sulfur_acceptor and not chemistry:
+        raise ValueError("sulfur_acceptor needs chemistry=True")
+    if neighbor_contacts and (not chemistry or min_separation <= 1):
+        raise ValueError("neighbor_contacts needs chemistry=True and min_separation of at least 2")
+    neighbor_chemistry = tuple(neighbor_chemistry)
+    if neighbor_contacts and (not neighbor_chemistry or set(neighbor_chemistry) - set(NEIGHBOR_CHEMISTRY_ALL)):
+        raise ValueError(f"neighbor_chemistry must be a non-empty subset of {NEIGHBOR_CHEMISTRY_ALL}, not {neighbor_chemistry!r}")
     columns = ["structure_id", "position_a", "position_b", "resname_a", "resname_b", "min_distance", "n_contacts"]
     if chemistry:
-        columns += ["closest", *CONTACT_FLAGS]
+        columns += ["closest", *CONTACT_FLAGS, *(SULFUR_FLAGS if sulfur_acceptor else ()), *(("neighbor",) if neighbor_contacts else ())]
     frames: List[pd.DataFrame] = []
     for sid, frame in _per_structure(_heavy(atoms)):
         frame = frame.reset_index(drop=True)
@@ -164,47 +387,99 @@ def residue_contacts(atoms: pd.DataFrame, *, cutoff: float = 4.0, min_distance: 
         i, j, d = _close_pairs(xyz, xyz, cutoff)
         pos = frame["position"].to_numpy()
         seq = frame["seq_index"].to_numpy()
-        keep = (i < j) & (pos[i] != pos[j]) & (np.abs(seq[i] - seq[j]) >= min_separation)
-        i, j, d = i[keep], j[keep], d[keep]
-        if len(i) == 0:
-            continue
-        swap = pos[i] > pos[j]
-        a, b = np.where(swap, j, i), np.where(swap, i, j)
         name = frame["atom"].to_numpy()
         elem = frame["element"].str.upper().to_numpy()
         res = frame["resname"].str.upper().to_numpy()
         bb = np.array([n in BACKBONE for n in name])
+        keep = (i < j) & (pos[i] != pos[j]) & (np.abs(seq[i] - seq[j]) >= min_separation)
+        neighbor = np.zeros(int(keep.sum()), bool)
+        if neighbor_contacts:
+            coordinated = (_metal_coordinated(frame, xyz, metals[metals["structure_id"] == sid]) if metals is not None
+                           else np.zeros(len(frame), bool))
+            hydrogens = placed_hydrogens(frame, xyz)
+            classes = _neighbor_flags(elem, res, name, bb, i, j, d, cutoff, xyz, hydrogens, coordinated)
+            wanted = np.zeros(len(i), bool)
+            for chosen in neighbor_chemistry:
+                wanted |= classes[chosen]
+            candidates = (i < j) & (pos[i] != pos[j]) & (np.abs(seq[i] - seq[j]) == 1) & wanted
+            ni, nj = _neighbor_atom_pairs(xyz, pos, seq, name, bb, candidates, i, j)
+            if len(ni):
+                nd = np.linalg.norm(xyz[ni] - xyz[nj], axis=-1)
+                i, j, d = np.concatenate([i[keep], ni]), np.concatenate([j[keep], nj]), np.concatenate([d[keep], nd])
+                neighbor = np.concatenate([neighbor, np.ones(len(ni), bool)])
+            else:
+                i, j, d = i[keep], j[keep], d[keep]
+        else:
+            i, j, d = i[keep], j[keep], d[keep]
+        if len(i) == 0:
+            continue
+        swap = pos[i] > pos[j]
+        a, b = np.where(swap, j, i), np.where(swap, i, j)
         pair = pd.DataFrame({"position_a": pos[a], "position_b": pos[b], "d": d, "closest": np.where(bb[a], "bb", "sc").astype(object) + "_" + np.where(bb[b], "bb", "sc").astype(object)})
         if chemistry:
-            polar = np.isin(elem[a], ["N", "O"]) & np.isin(elem[b], ["N", "O"]) & (d <= min(3.5, cutoff))
+            polar = np.isin(elem[a], ["N", "O"]) & np.isin(elem[b], ["N", "O"]) & (d <= min(POLAR_DISTANCE, cutoff))
             ring = np.array([n in RING_ATOMS.get(r, ()) for n, r in zip(name, res)])
             posi = np.array([(r, n) in POSITIVE_ATOMS for n, r in zip(name, res)])
             nega = np.array([(r, n) in NEGATIVE_ATOMS for n, r in zip(name, res)])
-            within = d <= min(4.0, cutoff)
+            within = d <= min(CHEMISTRY_DISTANCE, cutoff)
             pair["polar"] = polar
             pair["polar_sc"] = polar & (~bb[a] | ~bb[b])
             pair["polar_bb_bb"] = polar & bb[a] & bb[b]
             pair["hydrophobic"] = np.isin(elem[a], ["C", "S"]) & np.isin(elem[b], ["C", "S"]) & ~bb[a] & ~bb[b] & within
             pair["aromatic"] = (ring[a] | ring[b]) & within
             pair["ionic"] = ((posi[a] & nega[b]) | (nega[a] & posi[b])) & within
+            if sulfur_acceptor:
+                acceptor_limit = np.array([SULFUR_ACCEPTORS.get((r, n), 0.0) for r, n in zip(res, name)])
+                sg = np.nonzero((res == "CYS") & (name == "SG"))[0]
+                disulfide = np.zeros(len(frame), bool)
+                if len(sg) > 1:
+                    si, sj, _ = _close_pairs(xyz[sg], xyz[sg], DISULFIDE_DISTANCE)
+                    disulfide[sg[si[si != sj]]] = True
+                acceptor_limit[disulfide] = 0.0
+                backbone_donor = (name == "N") & (res != "PRO")
+                side_donor = np.array([(r, n) in SULFUR_DONORS for r, n in zip(res, name)])
+                coordinated = np.zeros(len(frame), bool)
+                if metals is not None:
+                    coordinated = _metal_coordinated(frame, xyz, metals[metals["structure_id"] == sid])
+                    backbone_donor &= ~coordinated
+                    side_donor &= ~coordinated
+                side_limit = np.minimum(acceptor_limit, SULFUR_SIDE_CHAIN_MAX)
+                pair["polar_s_bb"] = ((backbone_donor[a] & (d <= acceptor_limit[b])) | (backbone_donor[b] & (d <= acceptor_limit[a]))) & (d <= cutoff)
+                pair["polar_s"] = pair["polar_s_bb"] | (side_donor[a] & (d <= side_limit[b])) | (side_donor[b] & (d <= side_limit[a]))
+                hydrogens = placed_hydrogens(frame, xyz)
+                hydrogens[coordinated] = np.nan
+                pair["polar_s_geom"] = (_points_at(hydrogens, xyz, a, b, acceptor_limit > 0) | _points_at(hydrogens, xyz, b, a, acceptor_limit > 0)) & (d <= cutoff)
+        if neighbor_contacts:
+            pair["nbr"] = neighbor
+            classes = _neighbor_flags(elem, res, name, bb, a, b, d, cutoff, xyz, hydrogens, coordinated)
+            for flag in ("polar", "ionic", "hydrophobic", "aromatic"):
+                own = classes[flag] if flag in neighbor_chemistry else np.zeros(len(d), bool)
+                pair[flag] = np.where(neighbor, own, pair[flag])        # a neighbor row follows the neighbor rules and the chosen classes
+            pair["polar_sc"] = np.where(neighbor, pair["polar"], pair["polar_sc"])
+            pair["polar_bb_bb"] &= ~neighbor
+            for flag in SULFUR_FLAGS if sulfur_acceptor else ():
+                pair[flag] &= ~neighbor
         pair["ra"], pair["rb"] = res[a], res[b]
         keys = ["position_a", "position_b"]
-        flags = list(CONTACT_FLAGS) if chemistry else []
+        flags = (list(CONTACT_FLAGS) + (list(SULFUR_FLAGS) if sulfur_acceptor else [])) if chemistry else []
         closest = pair.sort_values("d", kind="stable").drop_duplicates(keys)[keys + ["d", "closest", "ra", "rb"]]
-        agg = pair.groupby(keys, sort=False).agg(n_contacts=("d", "size"), **{f: (f, "any") for f in flags}).reset_index()
+        extra = {"neighbor": ("nbr", "any")} if neighbor_contacts else {}
+        agg = pair.groupby(keys, sort=False).agg(n_contacts=("d", "size"), **{f: (f, "any") for f in flags}, **extra).reset_index()
         out = closest.merge(agg, on=keys)
         out = out[out["d"] >= min_distance].rename(columns={"d": "min_distance", "ra": "resname_a", "rb": "resname_b"})
         out.insert(0, "structure_id", sid)
         frames.append(out)
+    used = dict(cutoff=cutoff, min_distance=min_distance, min_separation=min_separation, sulfur_acceptor=sulfur_acceptor,
+                neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry)
     if not frames:
-        return pd.DataFrame(columns=columns)
-    return pd.concat(frames, ignore_index=True)[columns]
+        return _with_rules(pd.DataFrame(columns=columns), "residue_contacts", **used)
+    return _with_rules(pd.concat(frames, ignore_index=True)[columns], "residue_contacts", **used)
 
 
 # ----------------------------------------------------------------------------- cofactor features
 def cofactor_contacts(atoms: pd.DataFrame, features: pd.DataFrame, *, coordination_distance: float = 2.8,
                       polar_distance: float = 3.5, ionic_distance: float = 4.0, contact_distance: float = 4.0,
-                      record_distance: float = 8.0) -> pd.DataFrame:
+                      record_distance: float = 8.0, coordination_model: Optional[str] = None) -> pd.DataFrame:
     """Contacts between residues and cofactor features, one row per structure x feature x position.
 
     Classes: ``coord`` (a ``metal`` feature atom to a residue N, O, or S within
@@ -213,7 +488,15 @@ def cofactor_contacts(atoms: pd.DataFrame, features: pd.DataFrame, *, coordinati
     NE/NH1/NH2 within ``ionic_distance``), ``contact`` (any heavy-atom pair within
     ``contact_distance``). A feature groups all its atoms; residues farther than
     ``record_distance`` from every atom of the feature are not recorded (absent).
+
+    ``coordination_model="by_pair"`` (opt-in, experimental) adds ``coord_tier`` (``bond``, ``weak``,
+    ``default`` or ``none``), ``coord_donor_class`` and ``coord_rule`` from
+    :mod:`modules.coordination_table`: the cutoffs depend on the metal element and the donor
+    atom, and a pair not in the table follows ``coordination_distance`` and is marked ``default``.
+    The ``coord`` column is unchanged, so default output and the manuscript reproduction are identical.
     """
+    if coordination_model not in (None, "by_pair"):
+        raise ValueError(f"coordination_model must be None or 'by_pair', not {coordination_model!r}")
     rows: List[dict] = []
     heavy = _heavy(atoms)
     for sid, frame in _per_structure(heavy):
@@ -230,6 +513,7 @@ def cofactor_contacts(atoms: pd.DataFrame, features: pd.DataFrame, *, coordinati
         for feature, fgrp in feats.groupby("feature", sort=False):
             fxyz = fgrp[["x", "y", "z"]].to_numpy(float)
             metal = (fgrp["kind"] == "metal").to_numpy()
+            metal_element = fgrp["element"].str.upper().to_numpy()
             i, j, d = _close_pairs(xyz, fxyz, record_distance)
             if len(i) == 0:
                 continue
@@ -242,8 +526,18 @@ def cofactor_contacts(atoms: pd.DataFrame, features: pd.DataFrame, *, coordinati
                        "polar": bool((~is_metal & np.isin(elem[ii], ["N", "O"]) & (dd <= polar_distance)).any()),
                        "ionic": bool((~is_metal & ionic_atom[ii] & (dd <= ionic_distance)).any()),
                        "contact": bool((dd <= contact_distance).any())}
+                if coordination_model:
+                    donor = is_metal & np.isin(elem[ii], ["N", "O", "S", "SE"])
+                    call = coordination_table.strongest(
+                        (float(dist), coordination_table.coordination_tier(metal_element[b], res[a], name[a], float(dist),
+                                                                           default_max=coordination_distance))
+                        for a, b, dist in zip(ii[donor], jj[donor], dd[donor]))
+                    row.update(zip(TIER_COLUMNS, call))
                 rows.append(row)
-    return pd.DataFrame(rows, columns=["structure_id", "feature", "position", "resname", "min_distance", *FEATURE_CLASSES])
+    columns = ["structure_id", "feature", "position", "resname", "min_distance", *FEATURE_CLASSES]
+    return _with_rules(pd.DataFrame(rows, columns=columns + (list(TIER_COLUMNS) if coordination_model else [])), "cofactor_contacts",
+                       coordination_distance=coordination_distance, polar_distance=polar_distance, ionic_distance=ionic_distance,
+                       contact_distance=contact_distance, record_distance=record_distance, coordination_model=coordination_model)
 
 
 def water_bridges(atoms: pd.DataFrame, features: pd.DataFrame, waters: pd.DataFrame, *, bridge: float = 3.5,
@@ -279,7 +573,8 @@ def water_bridges(atoms: pd.DataFrame, features: pd.DataFrame, waters: pd.DataFr
             for p in np.unique(ppos):
                 rows.append({"structure_id": sid, "feature": feature, "position": p, "bridged": p in bridged,
                              "direct": p in direct_set, "indirect": (p in bridged) and (p not in direct_set)})
-    return pd.DataFrame(rows, columns=["structure_id", "feature", "position", "bridged", "direct", "indirect"])
+    return _with_rules(pd.DataFrame(rows, columns=["structure_id", "feature", "position", "bridged", "direct", "indirect"]), "water_bridges",
+                       bridge=bridge, direct=direct)
 
 
 def relay_steps(atoms: pd.DataFrame, sources: pd.DataFrame, waters: Optional[pd.DataFrame] = None, *,
@@ -336,10 +631,30 @@ def relay_steps(atoms: pd.DataFrame, sources: pd.DataFrame, waters: Optional[pd.
             if not level:
                 break
         out.extend({"structure_id": sid, "position": p, "steps": s} for p, s in best.items())
-    return pd.DataFrame(out, columns=["structure_id", "position", "steps"])
+    return _with_rules(pd.DataFrame(out, columns=["structure_id", "position", "steps"]), "relay_steps", link=link, max_steps=max_steps)
 
 
 # ----------------------------------------------------------------------------- the vote
+def sequence_votes(observations: pd.DataFrame, structures: pd.DataFrame, keys: Sequence[str], flag: str, *,
+                   condition: Optional[str] = None, structure_fraction: float = 0.5) -> pd.DataFrame:
+    """The vote of every sequence for every key: ``keys``, ``group``, ``sequence_id`` and a boolean ``vote``.
+
+    The first half of :func:`sequence_vote`: within a (key, sequence) the vote is positive when at least
+    ``structure_fraction`` of the sequence's structures (those present in ``observations`` for that key, and where
+    ``condition`` is true when given) are positive for ``flag``. Exposed so that the stability of the second half (the support
+    rule over sequences) can be studied without recomputing any geometry.
+    """
+    meta = structures[["structure_id", "group", "sequence_id"]].drop_duplicates("structure_id")
+    data = observations.merge(meta, on="structure_id", how="inner")
+    return _per_sequence_votes(data, list(keys), flag, condition, structure_fraction)
+
+
+def _per_sequence_votes(data: pd.DataFrame, keys: Sequence[str], flag: str, condition: Optional[str], structure_fraction: float) -> pd.DataFrame:
+    sub = data if condition is None else data[data[condition].astype(bool)]
+    share = sub.assign(_flag=sub[flag].astype(float)).groupby(list(keys) + ["group", "sequence_id"], sort=False)["_flag"].mean()
+    return (share >= structure_fraction).rename("vote").reset_index()
+
+
 def sequence_vote(observations: pd.DataFrame, structures: pd.DataFrame, keys: Sequence[str], flags: Sequence[str], *,
                   condition: Optional[str] = None, structure_fraction: float = 0.5, support: float = 0.90,
                   min_sequences: int = 5, groups: Optional[Sequence[str]] = None) -> pd.DataFrame:
@@ -360,9 +675,7 @@ def sequence_vote(observations: pd.DataFrame, structures: pd.DataFrame, keys: Se
     keys = list(keys)
     result: Optional[pd.DataFrame] = None
     for flag in flags:
-        sub = data if condition is None else data[data[condition].astype(bool)]
-        share = sub.assign(_flag=sub[flag].astype(float)).groupby(keys + ["group", "sequence_id"], sort=False)["_flag"].mean()
-        per_seq = (share >= structure_fraction).rename("vote").reset_index()
+        per_seq = _per_sequence_votes(data, keys, flag, condition, structure_fraction)
         agg = per_seq.groupby(keys + ["group"], sort=False)["vote"].agg(["sum", "count"]).reset_index()
         wide = agg.pivot_table(index=keys, columns="group", values=["sum", "count"], aggfunc="first")
         frame = pd.DataFrame(index=wide.index)
@@ -380,19 +693,18 @@ def sequence_vote(observations: pd.DataFrame, structures: pd.DataFrame, keys: Se
     return result if result is not None else pd.DataFrame(columns=keys)
 
 
-def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups: Optional[Sequence[str]] = None,
-                       cutoff: float = 4.0, min_separation: int = 2, support: float = 0.90, min_sequences: int = 5,
-                       structure_fraction: float = 0.5) -> pd.DataFrame:
-    """Contacts passing the sequence vote, with the conserved chemistry of each.
+def contact_observations(atoms: pd.DataFrame, *, cutoff: float = 4.0, min_separation: int = 2, sulfur_acceptor: bool = False,
+                         metals: Optional[pd.DataFrame] = None, neighbor_contacts: bool = False,
+                         neighbor_chemistry: Sequence[str] = NEIGHBOR_CHEMISTRY) -> pd.DataFrame:
+    """One row per (structure, candidate pair): ``contact`` plus the chemistry of the pair where it is in contact.
 
-    Every pair of positions mapped in a structure is a candidate; the contact vote counts
-    a structure as negative when both positions are present but not in contact. Chemistry
-    flags are voted over contact-positive structures only (``closest`` classes and the
-    flags in :data:`CONTACT_FLAGS`).
+    The candidates are the position pairs in contact anywhere in the set, evaluated in every structure that maps both
+    positions (a structure with both positions present and no contact is a negative). This is the table that
+    :func:`conserved_contacts` votes on.
     """
-    contacts = residue_contacts(atoms, cutoff=cutoff, min_separation=min_separation)
+    contacts = residue_contacts(atoms, cutoff=cutoff, min_separation=min_separation, sulfur_acceptor=sulfur_acceptor, metals=metals,
+                                neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry)
     present = _heavy(atoms).groupby("structure_id")["position"].apply(set)
-    # candidate pairs: contacts anywhere in the set, evaluated in every structure that maps both positions
     candidates = list(contacts[["position_a", "position_b"]].drop_duplicates().itertuples(index=False, name=None))
     in_contact = set(zip(contacts["structure_id"], contacts["position_a"], contacts["position_b"]))
     rows = [(sid, a, b, (sid, a, b) in in_contact) for sid, have in present.items() for a, b in candidates if a in have and b in have]
@@ -401,12 +713,35 @@ def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups:
     obs["contact"] = obs["contact"].astype(bool)
     for c in CONTACT_CLASSES:
         obs[c] = obs["closest"] == c
+    return obs
+
+
+def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups: Optional[Sequence[str]] = None,
+                       cutoff: float = 4.0, min_separation: int = 2, support: float = 0.90, min_sequences: int = 5,
+                       structure_fraction: float = 0.5, sulfur_acceptor: bool = False,
+                       metals: Optional[pd.DataFrame] = None, neighbor_contacts: bool = False,
+                       neighbor_chemistry: Sequence[str] = NEIGHBOR_CHEMISTRY) -> pd.DataFrame:
+    """Contacts passing the sequence vote, with the conserved chemistry of each.
+
+    Every pair of positions mapped in a structure is a candidate; the contact vote counts
+    a structure as negative when both positions are present but not in contact. Chemistry
+    flags are voted over contact-positive structures only (``closest`` classes and the
+    flags in :data:`CONTACT_FLAGS`). ``sulfur_acceptor`` and ``metals`` are passed to
+    :func:`residue_contacts` (opt-in), which adds the ``polar_s*`` flags to the voted chemistry;
+    ``neighbor_contacts`` adds the polar and ionic contacts between sequence neighbors, voted like any other
+    pair (a structure is negative when both positions are present and the pair has no such atom pair);
+    ``neighbor_chemistry`` selects its classes.
+    """
+    obs = contact_observations(atoms, cutoff=cutoff, min_separation=min_separation, sulfur_acceptor=sulfur_acceptor, metals=metals,
+                               neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry)
     keys = ["position_a", "position_b"]
     base = sequence_vote(obs, structures, keys, ["contact"], groups=groups, support=support,
                          min_sequences=min_sequences, structure_fraction=structure_fraction)
-    chem = sequence_vote(obs, structures, keys, list(CONTACT_CLASSES) + list(CONTACT_FLAGS), condition="contact", groups=groups,
+    chem = sequence_vote(obs, structures, keys, list(CONTACT_CLASSES) + list(CONTACT_FLAGS) + (list(SULFUR_FLAGS) if sulfur_acceptor else []),
+                         condition="contact", groups=groups,
                          support=support, min_sequences=min_sequences, structure_fraction=structure_fraction)
-    return base.merge(chem, on=keys, how="left")
+    return _with_rules(base.merge(chem, on=keys, how="left"), "conserved_contacts", cutoff=cutoff, min_separation=min_separation,
+                       sulfur_acceptor=sulfur_acceptor, neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry, support=support, min_sequences=min_sequences, structure_fraction=structure_fraction)
 
 
 # ----------------------------------------------------------------------------- audits
@@ -482,3 +817,128 @@ def chemistry_summary(votes: pd.DataFrame, *, local_separation: Optional[pd.Seri
             row["distant"] = int(passing.loc[~loc, c].fillna(False).sum())
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+# ----------------------------------------------------------------------------- provenance
+RULE_TABLES = ("residue_contacts", "cofactor_contacts", "water_bridges", "relay_steps", "conserved_contacts")
+
+
+def class_rules(table: Optional[str] = None, **parameters) -> pd.DataFrame:
+    """The rule behind every reported column, with the cutoffs actually used.
+
+    One row per ``(table, name)`` with ``rule`` (a sentence), ``cutoff_A`` (the distance that decides it, when
+    there is one) and ``status`` (``default`` or ``opt-in``). ``table`` is one of :data:`RULE_TABLES`, or None for
+    all. ``parameters`` are the arguments of the function that produced the table (an omitted one is that
+    function's default, read from its signature), so the text and the numbers cannot drift from the code. Every
+    result of this module carries its rules in ``frame.attrs["rules"]`` (see :func:`rules_of`).
+    """
+    if table is not None and table not in RULE_TABLES:
+        raise ValueError(f"table must be one of {RULE_TABLES} or None, not {table!r}")
+    rows: List[dict] = []
+
+    def add(owner, name, rule, cutoff=np.nan, status="default"):
+        rows.append({"table": owner, "name": name, "rule": rule, "cutoff_A": cutoff, "status": status})
+
+    def given(function, name):
+        value = parameters.get(name)
+        return inspect.signature(function).parameters[name].default if value is None else value
+
+    if table in (None, "residue_contacts", "conserved_contacts"):
+        cutoff, min_distance = given(residue_contacts, "cutoff"), given(residue_contacts, "min_distance")
+        min_separation = given(residue_contacts, "min_separation")
+        polar, chem = min(POLAR_DISTANCE, cutoff), min(CHEMISTRY_DISTANCE, cutoff)
+        owner = "residue_contacts"
+        add(owner, "contact", f"closest heavy-atom pair of two residues between {min_distance:g} and {cutoff:g} A, residues at least "
+            f"{min_separation} apart in sequence; one row per residue pair", cutoff)
+        add(owner, "closest", f"backbone/side-chain class (bb_bb, bb_sc, sc_bb, sc_sc) of the single closest atom pair; backbone atoms are {', '.join(sorted(BACKBONE))}")
+        add(owner, "polar", f"any N/O atom pair within {polar:g} A (a capable pair judged from heavy atoms alone, and sulfur is never counted)", polar)
+        add(owner, "polar_sc", f"a polar pair with at least one side-chain atom, within {polar:g} A", polar)
+        add(owner, "polar_bb_bb", f"a polar pair with both atoms in the backbone, within {polar:g} A", polar)
+        add(owner, "hydrophobic", f"a side-chain C/S pair within {chem:g} A", chem)
+        add(owner, "aromatic", f"a ring atom of Phe, Tyr, Trp or His of either residue within {chem:g} A of any heavy atom of the other", chem)
+        add(owner, "ionic", f"Lys NZ or Arg NE/NH1/NH2 to Asp OD1/OD2 or Glu OE1/OE2 within {chem:g} A", chem)
+        windows = ", ".join(f"{r.title()} {a} {limit:g} A" for (r, a), limit in SULFUR_ACCEPTORS.items())
+        opt = "opt-in"
+        add(owner, "polar_s", f"a backbone N (not Pro) within {windows} of a sulfur in another residue, or a listed side-chain N/OH "
+            f"(Ser, Thr, Tyr, Asn, Gln, Arg, Lys, Trp, His) within {SULFUR_SIDE_CHAIN_MAX:g} A; a disulfide SG (another SG within "
+            f"{DISULFIDE_DISTANCE:g} A) never accepts; a donor a metal coordinates is excluded when `metals` is given; a capable pair, not a proven hydrogen bond",
+            SULFUR_SIDE_CHAIN_MAX, opt)
+        add(owner, "polar_s_bb", f"polar_s restricted to backbone N donors, within {windows}", max(SULFUR_ACCEPTORS.values()), opt)
+        add(owner, "polar_s_geom", f"the hydrogen placed from the heavy atoms (backbone amide, Trp NE1, Arg, Asn/Gln amide, a His ring N as if protonated) "
+            f"points at the sulfur: H...S <= {protonation.SULFUR_H_MAX:g} A and N-H...S >= {protonation.SULFUR_ANGLE_MIN:g} degrees; "
+            f"hydroxyl and Lys NZ are not tested", protonation.SULFUR_H_MAX, opt)
+        selected = tuple(parameters.get("neighbor_chemistry") or NEIGHBOR_CHEMISTRY)
+        add(owner, "neighbor", f"opt-in (neighbor_contacts): residues one apart in sequence, judged per atom pair; an atom pair counts when it is at least "
+            f"{NEIGHBOR_MIN_BONDS} bonds apart through the peptide bond and belongs to a selected class (default {', '.join(NEIGHBOR_CHEMISTRY)}; "
+            f"all: {', '.join(NEIGHBOR_CHEMISTRY_ALL)}); a row carries only the selected classes, the sulfur flags are False, and min_distance and closest "
+            f"are those of the closest qualifying pair", np.nan, opt)
+        donors = "backbone N except Pro, or Ser OG, Thr OG1, Tyr OH, Asn ND2, Gln NE2, Arg N, Lys NZ, Trp NE1, a His ring N"
+        add(owner, "neighbor_polar", f"a hydrogen-bond candidate with at least one side-chain atom: a donor ({donors}) to an acceptor (any O or a His ring N) within "
+            f"{polar:g} A; when the donor's hydrogen can be placed it must point at the acceptor (H...A <= {NEIGHBOR_H_MAX:g} A, N-H...A >= "
+            f"{protonation.SULFUR_ANGLE_MIN:g} degrees), otherwise (hydroxyl, Lys NZ) the distance decides; a metal-coordinated atom does not count", polar, opt)
+        add(owner, "neighbor_ionic", f"Lys NZ or Arg NE/NH1/NH2 to Asp OD1/OD2 or Glu OE1/OE2 within {chem:g} A", chem, opt)
+        add(owner, "neighbor_hydrophobic", f"a C/S pair, both atoms side-chain atoms beyond C-beta, within {chem:g} A (backbone and C-beta proximity is conformation)", chem, opt)
+        add(owner, "neighbor_aromatic", f"a ring atom of Phe, Tyr, Trp or His against a side-chain atom beyond C-beta within {chem:g} A (a ring beside the backbone is not counted)", chem, opt)
+        for row in rows:
+            if row["name"].startswith("neighbor_") and parameters.get("neighbor_contacts", False) and row["name"][len("neighbor_"):] not in selected:
+                row["rule"] += " [not selected: neighbor_chemistry excludes it]"
+        if not parameters.get("neighbor_contacts", False) and table in ("residue_contacts", "conserved_contacts"):
+            for row in rows:
+                if row["name"].startswith("neighbor"):
+                    row["rule"] += " [not computed in this table: neighbor_contacts was off]"
+        if not parameters.get("sulfur_acceptor", False) and table in ("residue_contacts", "conserved_contacts"):
+            for row in rows:
+                if row["status"] == opt and row["name"].startswith("polar_s"):
+                    row["rule"] += " [not computed in this table: sulfur_acceptor was off]"
+    if table in (None, "cofactor_contacts"):
+        coord = given(cofactor_contacts, "coordination_distance")
+        polar, ionic = given(cofactor_contacts, "polar_distance"), given(cofactor_contacts, "ionic_distance")
+        contact, record = given(cofactor_contacts, "contact_distance"), given(cofactor_contacts, "record_distance")
+        owner = "cofactor_contacts"
+        add(owner, "coord", f"a metal feature atom to a residue N, O or S within {coord:g} A (one global cutoff)", coord)
+        add(owner, "polar", f"an oxygen feature atom to a residue N or O within {polar:g} A", polar)
+        add(owner, "ionic", f"an oxygen feature atom to Lys NZ or Arg NE/NH1/NH2 within {ionic:g} A", ionic)
+        add(owner, "contact", f"any feature atom to any residue heavy atom within {contact:g} A", contact)
+        add(owner, "(rows)", f"residues farther than {record:g} A from every atom of the feature are not recorded", record)
+        if table is None or parameters.get("coordination_model"):
+            opt = "opt-in"
+            add(owner, "coord_tier", f"by metal and donor class (coordination_model='by_pair'): bond, weak, default (pair not in the table: "
+                f"follows {coord:g} A) or none; the row used is in coord_rule", status=opt)
+            for entry in coordination_table.RULES:
+                weak = f", weak <= {entry.weak_max:g}" if entry.weak_max is not None else ""
+                add(owner, f"coord_tier: {entry.metal.title()} {entry.donor_class}", f"bond <= {entry.bond_max:g}{weak} A; {entry.source}", entry.bond_max, opt)
+    if table in (None, "water_bridges"):
+        bridge, direct = given(water_bridges, "bridge"), given(water_bridges, "direct")
+        add("water_bridges", "bridged", f"a modeled water oxygen within {bridge:g} A of a feature oxygen and within {bridge:g} A of a residue N/O", bridge)
+        add("water_bridges", "direct", f"a residue N/O within {direct:g} A of the feature oxygen", direct)
+        add("water_bridges", "indirect", "bridged and not direct")
+    if table in (None, "relay_steps"):
+        link, steps = given(relay_steps, "link"), given(relay_steps, "max_steps")
+        add("relay_steps", "steps", f"fewest links from the source atoms to a residue through residue N/O atoms and waters; two nodes link within {link:g} A; "
+            f"a residue reached only by its backbone N or O is a terminal; at most {steps} links", link)
+    if table in (None, "conserved_contacts"):
+        fraction, support = given(sequence_vote, "structure_fraction"), given(sequence_vote, "support")
+        minimum = given(sequence_vote, "min_sequences")
+        add("conserved_contacts", "conserved_<flag>", f"one vote per sequence: positive when at least {fraction:.0%} of the sequence's structures show it; "
+            f"conserved when every group has at least {minimum} voting sequences and at least {support:.0%} of them positive; chemistry flags are voted "
+            f"over contact-positive structures only", support)
+    return pd.DataFrame(rows, columns=["table", "name", "rule", "cutoff_A", "status"])
+
+
+def _with_rules(frame: pd.DataFrame, table: str, **parameters) -> pd.DataFrame:
+    frame.attrs["rules"] = class_rules(table, **parameters).to_dict("records")
+    return frame
+
+
+def rules_of(frame: pd.DataFrame) -> pd.DataFrame:
+    """The rules a result of this module was produced with (empty if the frame did not come from here)."""
+    return pd.DataFrame(frame.attrs.get("rules", []), columns=["table", "name", "rule", "cutoff_A", "status"])
+
+
+def format_rules(rules: pd.DataFrame) -> str:
+    """The rules as a Markdown table, for a log or a report."""
+    lines = ["| table | name | rule | cutoff (A) | status |", "|---|---|---|---|---|"]
+    for r in rules.itertuples():
+        cutoff = "" if pd.isna(r.cutoff_A) else f"{r.cutoff_A:g}"
+        lines.append(f"| {r.table} | {r.name} | {r.rule} | {cutoff} | {r.status} |")
+    return "\n".join(lines) + "\n"

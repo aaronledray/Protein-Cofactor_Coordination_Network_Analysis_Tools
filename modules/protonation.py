@@ -10,6 +10,9 @@ wraps two optional tools and adds geometry helpers that need neither:
 * :func:`directional_hbonds` -- donors whose hydrogen points at an acceptor
   (H...A <= 2.5 Å, D-H...A >= 120°, D...A <= 3.5 Å), with an option to test a histidine as
   doubly protonated by placing a virtual hydrogen on each ring nitrogen that lacks one;
+* :func:`backbone_amide_hydrogen`, :func:`ring_nh_hydrogen`, :func:`amide_nh2_hydrogens` and
+  :func:`hydrogen_bond_geometry` -- hydrogens placed from heavy atoms for the planar donors
+  (backbone amide, Trp NE1, Arg, Asn/Gln amide, a His ring N as if protonated);
 * :func:`carboxylate_distances` -- closest carboxylate oxygen to an acceptor, since a
   carboxylate cannot donate to a carboxylate unless one is protonated and a short O...O
   contact (about 2.7 Å or less) is the geometry of a protonated pair.
@@ -110,6 +113,44 @@ def directional_hbonds(donor_hydrogen_pairs: Sequence[tuple], acceptors: np.ndar
                     and _angle(donor, hydrogen, acceptor) >= angle_min):
                 return True
     return False
+
+
+# Hydrogens placed from heavy atoms alone, for planar donors. Hydroxyl and Lys NZ hydrogens rotate and are not placed.
+NH_LENGTH = 1.01
+SULFUR_H_MAX = 2.9           # H...S limit of an H-bond-like contact to a sulfur
+SULFUR_ANGLE_MIN = 120.0     # N-H...S angle limit
+# (residue, atom) -> the two ring neighbors; the H lies on the exocyclic bisector (a His ring N is treated as if protonated).
+RING_DONORS = {("TRP", "NE1"): ("CD1", "CE2"), ("HIS", "ND1"): ("CG", "CE1"), ("HIS", "NE2"): ("CD2", "CE1"), ("ARG", "NE"): ("CD", "CZ")}
+# (residue, atom) -> (bonded C, reference atom defining the plane); two H at 120 degrees from the C-N bond.
+AMIDE_DONORS = {("ASN", "ND2"): ("CG", "OD1"), ("GLN", "NE2"): ("CD", "OE1"), ("ARG", "NH1"): ("CZ", "NE"), ("ARG", "NH2"): ("CZ", "NE")}
+
+
+def backbone_amide_hydrogen(n: np.ndarray, c_prev: np.ndarray, ca: np.ndarray) -> np.ndarray:
+    """Amide H on the bisector of the C(i-1)-N and CA-N bonds, ``NH_LENGTH`` from N."""
+    u = (n - c_prev) / np.linalg.norm(n - c_prev)
+    v = (n - ca) / np.linalg.norm(n - ca)
+    return n + NH_LENGTH * (u + v) / np.linalg.norm(u + v)
+
+
+def ring_nh_hydrogen(n: np.ndarray, neighbor_a: np.ndarray, neighbor_b: np.ndarray) -> np.ndarray:
+    """H on the exocyclic bisector of a ring N (Trp NE1, a His ring N as if protonated, Arg NE)."""
+    u, v = neighbor_a - n, neighbor_b - n
+    direction = -(u / np.linalg.norm(u) + v / np.linalg.norm(v))
+    return n + NH_LENGTH * direction / np.linalg.norm(direction)
+
+
+def amide_nh2_hydrogens(n: np.ndarray, c: np.ndarray, reference: np.ndarray) -> List[np.ndarray]:
+    """The two H of an NH2 group, in the plane of ``reference``, 120 degrees from the C-N bond."""
+    u = (n - c) / np.linalg.norm(n - c)
+    w = reference - c
+    w = w - np.dot(w, u) * u
+    w /= np.linalg.norm(w)
+    return [n + NH_LENGTH * (np.cos(np.radians(60)) * u + sign * np.sin(np.radians(60)) * w) for sign in (1.0, -1.0)]
+
+
+def hydrogen_bond_geometry(h: np.ndarray, donor: np.ndarray, acceptor: np.ndarray) -> tuple:
+    """(H...acceptor distance, donor-H...acceptor angle in degrees)."""
+    return float(np.linalg.norm(acceptor - h)), _angle(donor, h, acceptor)
 
 
 def carboxylate_distances(atoms: pd.DataFrame, acceptors: pd.DataFrame) -> pd.DataFrame:

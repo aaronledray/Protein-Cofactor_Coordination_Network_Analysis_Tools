@@ -9,6 +9,7 @@ protein_wire_output/
 substrate_seed_output/
 typed_interaction_output/
 benchmark_output/
+site_check_output/
 
 
 # Generated comparison outputs next to the aligned example structures (PDBs stay tracked):
@@ -28,3 +29,5 @@ modules/__pycache__
 build/
 dist/
 *.egg-info/
+survey_cache/
+docs/scope_checks/03_sulfur_acceptor_survey_contacts.csv

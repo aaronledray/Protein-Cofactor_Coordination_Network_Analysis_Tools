@@ -58,6 +58,119 @@ class ContactTests(unittest.TestCase):
         self.assertTrue(row["aromatic"])
 
 
+class SulfurAcceptorTests(unittest.TestCase):
+    def contact(self, donor, acceptor, distance, **kwargs):
+        """One pair in the table: donor at the origin, acceptor ``distance`` away, far apart in sequence."""
+        atoms = atoms_frame([("s", 1, 1, *donor, 0.0, 0.0, 0.0), ("s", 9, 9, *acceptor, distance, 0.0, 0.0), *kwargs.get("extra", [])])
+        table = ci.residue_contacts(atoms, sulfur_acceptor=True)
+        return table[(table.position_a == 1) & (table.position_b == 9)].iloc[0]
+
+    def test_backbone_nh_to_cys_sulfur_follows_the_window(self):
+        for distance, expected in ((3.5, True), (3.7, True), (3.75, False)):
+            row = self.contact(("ALA", "N", "N"), ("CYS", "SG", "S"), distance)
+            self.assertEqual((row["polar_s"], row["polar_s_bb"]), (expected, expected), distance)
+            self.assertFalse(row["polar"])                                  # the N/O rule is untouched
+        self.assertFalse(self.contact(("ALA", "N", "N"), ("CYS", "SG", "S"), 3.5)["hydrophobic"])   # an N...S pair is not a C/S pair
+
+    def test_met_window_is_shorter_and_either_residue_order_works(self):
+        self.assertTrue(self.contact(("ALA", "N", "N"), ("MET", "SD", "S"), 3.6)["polar_s"])
+        self.assertFalse(self.contact(("ALA", "N", "N"), ("MET", "SD", "S"), 3.65)["polar_s"])
+        self.assertTrue(self.contact(("CYS", "SG", "S"), ("ALA", "N", "N"), 3.5)["polar_s"])     # acceptor at the lower position
+
+    def test_side_chain_donors_are_capable_but_not_backbone(self):
+        row = self.contact(("SER", "OG", "O"), ("CYS", "SG", "S"), 3.4)
+        self.assertTrue(row["polar_s"])
+        self.assertFalse(row["polar_s_bb"])
+
+    def test_non_donors_and_non_acceptors_are_not_flagged(self):
+        self.assertFalse(self.contact(("ALA", "O", "O"), ("CYS", "SG", "S"), 3.4)["polar_s"])      # carbonyl O has no H
+        self.assertFalse(self.contact(("PRO", "N", "N"), ("CYS", "SG", "S"), 3.4)["polar_s"])      # Pro N has no H
+        self.assertFalse(self.contact(("ALA", "N", "N"), ("LEU", "CD1", "C"), 3.4)["polar_s"])
+        self.assertFalse(self.contact(("ALA", "N", "N"), ("CYS", "CB", "C"), 3.4)["polar_s"])      # only the thiol/thiolate S accepts
+
+    def test_side_chain_donors_have_a_shorter_window_than_backbone_n(self):
+        cys = ("CYS", "SG", "S")
+        for donor, distance, backbone_flag, flag in ((("ALA", "N", "N"), 3.65, True, True), (("SER", "OG", "O"), 3.65, False, False),
+                                                       (("SER", "OG", "O"), 3.55, False, True)):
+            row = self.contact(donor, cys, distance)
+            self.assertEqual((row["polar_s_bb"], row["polar_s"]), (backbone_flag, flag), (donor, distance))
+
+    def residue_chain(self, rows):
+        """A donor residue (seq 2, with its preceding C at seq 1) and a Cys at seq 9, from (resname, seq, atom, element, xyz) rows."""
+        return atoms_frame([("s", seq, seq, res, atom, el, *xyz) for res, seq, atom, el, xyz in rows])
+
+    def test_geometric_flag_needs_the_hydrogen_to_point_at_the_sulfur(self):
+        # Backbone amide placed from C(i-1), N and CA; one sulfur sits along the N-H direction, one across it.
+        c_prev, n, ca = np.array([-1.33, 0.0, 0.0]), np.zeros(3), np.array([0.55, 1.3, 0.0])
+        h = ci.protonation.backbone_amide_hydrogen(n, c_prev, ca)
+        direction = (h - n) / np.linalg.norm(h - n)
+        perpendicular = np.cross(direction, [0, 0, 1.0])
+        for label, s_xyz, expected in (("along N-H", n + 3.4 * direction, True), ("across N-H", n + 3.4 * perpendicular, False)):
+            atoms = self.residue_chain([("ALA", 1, "C", "C", c_prev), ("ALA", 2, "N", "N", n), ("ALA", 2, "CA", "C", ca), ("CYS", 9, "SG", "S", s_xyz)])
+            row = ci.residue_contacts(atoms, sulfur_acceptor=True).set_index(["position_a", "position_b"]).loc[(2, 9)]
+            self.assertTrue(row["polar_s_bb"], label)                                  # the capable flag only sees the distance
+            self.assertEqual(row["polar_s_geom"], expected, label)
+
+    def test_geometric_flag_skips_unplaceable_donors_and_missing_neighbors(self):
+        s = ("CYS", 9, "SG", "S", np.array([3.4, 0.0, 0.0]))
+        no_previous = self.residue_chain([("ALA", 2, "N", "N", np.zeros(3)), ("ALA", 2, "CA", "C", np.array([-0.5, 1.3, 0.0])), s])
+        self.assertFalse(ci.residue_contacts(no_previous, sulfur_acceptor=True)["polar_s_geom"].any())      # no C(i-1) to place the amide H
+        hydroxyl = self.residue_chain([("SER", 2, "OG", "O", np.zeros(3)), s])
+        row = ci.residue_contacts(hydroxyl, sulfur_acceptor=True).iloc[0]
+        self.assertTrue(row["polar_s"] and not row["polar_s_geom"])                      # the OH hydrogen rotates: capable, not testable
+
+    def test_geometric_flag_for_a_planar_side_chain_and_the_metal_exclusion(self):
+        # Gln amide in the xy plane: CD at the origin, NE2 at +x, OE1 off to the side; S placed along one N-H.
+        cd, ne2, oe1 = np.zeros(3), np.array([1.33, 0.0, 0.0]), np.array([-0.6, 1.1, 0.0])
+        h = ci.protonation.amide_nh2_hydrogens(ne2, cd, oe1)[0]
+        s_xyz = ne2 + 3.4 * (h - ne2) / np.linalg.norm(h - ne2)
+        atoms = self.residue_chain([("GLN", 2, "CD", "C", cd), ("GLN", 2, "NE2", "N", ne2), ("GLN", 2, "OE1", "O", oe1), ("CYS", 9, "SG", "S", s_xyz)])
+        row = ci.residue_contacts(atoms, sulfur_acceptor=True).iloc[0]
+        self.assertTrue(row["polar_s_geom"] and row["polar_s"] and not row["polar_s_bb"])
+        metals = pd.DataFrame([("s", "ZN", *(ne2 + [0.0, 0.0, 2.0]))], columns=["structure_id", "element", "x", "y", "z"])
+        row = ci.residue_contacts(atoms, sulfur_acceptor=True, metals=metals).iloc[0]
+        self.assertFalse(row["polar_s_geom"] or row["polar_s"])                           # a metal-bound N has no H to donate
+
+    def test_histidine_is_a_capable_donor_unless_a_metal_coordinates_it(self):
+        his, cys = ("HIS", "ND1", "N"), ("CYS", "SG", "S")
+        atoms = atoms_frame([("s", 1, 1, *his, 0.0, 0.0, 0.0), ("s", 9, 9, *cys, 3.4, 0.0, 0.0)])
+
+        def metals(element, x, sid="s"):
+            return pd.DataFrame([(sid, element, x, 0.0, 0.0)], columns=["structure_id", "element", "x", "y", "z"])
+
+        def flagged(table):
+            return bool(ci.residue_contacts(atoms, sulfur_acceptor=True, metals=table)["polar_s"].iloc[0])
+        self.assertTrue(flagged(None))                                          # no metals given: nothing is excluded
+        self.assertTrue(flagged(metals("CU", -3.0)))                            # a metal far from the N does not exclude it
+        self.assertFalse(flagged(metals("CU", -2.0)))                           # Cu-N(His) 2.0 A: bond tier, the N is deprotonated
+        self.assertTrue(flagged(metals("CU", -2.6)))                            # Cu-N 2.6 A: listed, beyond bond_max 2.4, not coordinated
+        self.assertFalse(flagged(metals("ZN", -2.0)))                           # Zn is not in the table: the global 2.8 A applies
+        self.assertTrue(flagged(metals("ZN", -3.0)))
+        self.assertTrue(flagged(metals("CU", -2.0, sid="other")))               # a metal of another structure is ignored
+        with_metal = ci.residue_contacts(atoms, sulfur_acceptor=True, metals=metals("CU", -2.0))
+        self.assertFalse(with_metal["polar_s_bb"].iloc[0])
+
+    def test_load_metals_reads_the_ions_of_a_structure(self):
+        from pathlib import Path
+        cif = Path(__file__).resolve().parents[1] / "reference_structures/0_Plastocyanin/1ag6.cif"
+        table = ci.load_metals(cif, structure_id="1ag6")
+        self.assertEqual(table["element"].tolist(), ["CU"])
+        self.assertEqual(table["structure_id"].tolist(), ["1ag6"])
+
+    def test_a_disulfide_sulfur_is_never_an_acceptor(self):
+        partner = [("s", 30, 30, "CYS", "SG", "S", 3.4, 2.05, 0.0)]                                # 2.05 A from the acceptor SG
+        row = self.contact(("ALA", "N", "N"), ("CYS", "SG", "S"), 3.4, extra=partner)
+        self.assertFalse(row["polar_s"])
+
+    def test_default_output_is_unchanged_and_the_option_needs_chemistry(self):
+        atoms = atoms_frame([("s", 1, 1, "ALA", "N", "N", 0.0, 0.0, 0.0), ("s", 9, 9, "CYS", "SG", "S", 3.4, 0.0, 0.0)])
+        plain, tiered = ci.residue_contacts(atoms), ci.residue_contacts(atoms, sulfur_acceptor=True)
+        self.assertNotIn("polar_s", plain.columns)
+        pd.testing.assert_frame_equal(tiered[list(plain.columns)], plain)
+        with self.assertRaises(ValueError):
+            ci.residue_contacts(atoms, chemistry=False, sulfur_acceptor=True)
+
+
 class FeatureTests(unittest.TestCase):
     def setUp(self):
         self.atoms = atoms_frame([
