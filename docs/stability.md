@@ -46,8 +46,10 @@ releases and they are not part of the labeling contract:
 - typed interaction analysis: `interaction_typing`, `interaction_cli`,
   `type-coordination-interactions` (optional PDBe Arpeggio dependency)
 - conserved interactions: `conserved_interactions` (contacts, cofactor features, water bridges, relay
-  links, the sequence vote, anchor audit) and `protonation` (optional PROPKA and `reduce`), `conserved_wires` (path signatures and
-  independent routes across structure sets)
+  links, the sequence vote and its depth, anchor and backbone audits, metal-bound ligands, neighbor contacts, sulfur acceptors) and `protonation`
+  (optional PROPKA and `reduce`, hydrogen placement), `conserved_wires` (path signatures and independent routes across structure sets),
+  `coordination_table` (per-metal, per-donor coordination tiers), `site_figures` (human-check figures for a metal site) and `design_log`
+  (the log folder: tidy tables, manifest and summary)
 
 Wire and substrate results are structural hypotheses, not rate, binding, or
 reactivity calculations.

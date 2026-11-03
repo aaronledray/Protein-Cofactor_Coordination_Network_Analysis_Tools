@@ -123,6 +123,21 @@ class OverlapTests(unittest.TestCase):
                 coord = ci.cofactor_contacts(d["atoms"], metal_features, coordination_distance=cutoff)
                 self.assertEqual({int(p) for p in coord.loc[coord["coord"], "position"]}, direct, (sid, cutoff))
 
+    def test_the_metal_ligand_table_reproduces_the_non_protein_direct_ligands_of_the_analysis(self):
+        # the gap named in the known differences: waters and small ligands on a metal. load_metal_ligands is the descriptive route to them.
+        for sid in ("1ca2", "1a6m"):
+            path, cofactor, _, _ = CASES[sid]
+            analysis = self.data[sid]["analysis"]["contacts"]
+            direct = analysis[analysis["direct_coordination"] & ~analysis["dst_resname"].isin(STANDARD)]
+            table = ci.load_metal_ligands(path, structure_id=sid, max_distance=2.6)
+            table = table[table["metal_resname"] == ("ZN" if sid == "1ca2" else "HEM")]
+            expected = {(r.dst_resname, int(r.dst_resnum), r.dst_atom): float(r.distance_A) for r in direct.itertuples()}
+            found = {(r.ligand_resname, r.ligand_number, r.ligand_atom): r.distance for r in table.itertuples()}
+            self.assertEqual(set(found), set(expected), sid)
+            for key, value in expected.items():
+                self.assertAlmostEqual(found[key], value, places=5, msg=(sid, key))
+            self.assertGreater(len(found), 0)
+
     def test_the_tiers_agree_between_the_two_routes(self):
         d = self.data["1ag6"]
         route_one = coordination_table.annotate_contacts(d["analysis"]["contacts"])

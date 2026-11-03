@@ -138,6 +138,28 @@ The earlier figures (253 structures, 55 sequences, 484 contacts) included the fo
 The check builds its atom table from the manuscript's own residue map, not with `load_atoms`, so it does not test
 the loader; the rules in the next section are covered by `tests/test_conserved_interactions.py`.
 
+## Metal-bound waters and ligands
+
+`load_atoms` keeps standard residues only, so a water or small molecule bound to a metal is not in the atom table or the vote. `load_metal_ligands(path)` reports them
+per structure, descriptively: one row per (metal atom, non-protein atom within `max_distance`, default 2.8 A) with the metal and ligand residue, atom, element, distance and a
+water flag; the metal's own residue (a porphyrin) is excluded, an atom with alternate locations keeps its first conformer, and a modified amino acid counts as a ligand.
+It is never voted: in the 277 oxidase binuclear centres, 37% of heme irons and 42% of CuB have such an atom, in 16 different species (peroxide, CO, water, azide, peroxo,
+cyanide, hydroxide, NO, ...; `docs/scope_checks/12_oxidase_metal_ligands.md`), and the species reflects what each experiment modelled, so a vote on it would largely record
+how the structures were prepared, not conservation. For a catalytic metal in a single structure (the zinc-bound water of carbonic anhydrase) it is part of the site and belongs in the log beside the
+residues; across a family it is state information, which the unbuilt state stratification can use.
+
+## The log
+
+`design_log.write_log(directory, tables, structures=..., title=..., parameters=...)` (experimental) writes the result of an analysis as a folder: one tidy CSV per table you give
+it (for example `conserved_contacts(coverage=True)`, the cofactor vote with its coordination tiers, `load_metal_ligands`, the audits), `structures.csv` (structure, group,
+sequence), `manifest.json` and `SUMMARY.md`. The manifest records the log format and version, the date, the repository commit, the dataset (structures, sequences, and per group the
+sequences, structures and negative sequences a contact can take), the parameters you pass, and for each table its file, row count, columns (with types and the rule behind each
+column from the legend that travels with the table) and the legends themselves. `SUMMARY.md` is the same for a person: the fixed statement of what the log means, the dataset and group
+depth (a group with no tolerated negative sequence is called out), the tables, the headline counts, metal ligands by species, the parameters and the rules in force. The writer
+refuses to replace an existing log unless asked and never touches other files in the folder. It writes no directives: what a directive may say is a separate decision, and the
+tests check that nothing the log writes claims importance or prediction outside its fixed statement. Composing the analysis functions into a pipeline (a command, single-protein mode)
+is not part of the writer.
+
 ## Loading structures
 
 `load_atoms(path, chain, position_map)` reads one chain of the first model (`model_index`) with Biopython. For

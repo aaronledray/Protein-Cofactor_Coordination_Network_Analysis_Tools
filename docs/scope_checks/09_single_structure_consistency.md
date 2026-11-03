@@ -26,8 +26,9 @@ the CNI side uses `load_atoms` and `cofactor_contacts` on the same files.
 1. **Waters and ligands.** The analysis counts a metal-bound water or small ligand as a direct ligand: the water on the zinc of carbonic anhydrase (2.09 A) and the
    oxygen molecule on the heme iron of myoglobin (1.81 A). The CNI loader keeps standard residues only, so `cofactor_contacts` cannot see either. For a log of the residues
    that coordinate a catalytic metal this is a real gap: the directive would list the three histidines of carbonic anhydrase and not the water that is the substrate
-   site. It is a scope decision (waters are not residues; `water_bridges` handles waters through a separate input), not a bug, and it is the author's call whether
-   metal-bound waters and ligands belong in the log.
+   site. It is a scope decision (waters are not residues; `water_bridges` handles waters through a separate input), not a bug. Decided 2026-11-02: they are
+   reported per structure by `conserved_interactions.load_metal_ligands` (descriptive, never voted); the test `test_the_metal_ligand_table_reproduces_the_non_protein_direct_ligands_of_the_analysis`
+   shows that table equals the analysis's non-protein direct ligands on the zinc and heme structures.
 2. **Cutoffs.** The command's direct-coordination cutoff is 2.6 A and CNI's `coord` is 2.8 A (both pinned). At 2.88 A the axial Met92 of plastocyanin is in neither and is
    named only by the weak tier.
 3. **Features must be built by hand.** `cofactor_contacts` takes a `features` table; nothing builds it from a structure and a residue name. The test needs a helper

@@ -179,6 +179,59 @@ def load_metals(path: str, *, structure_id: Optional[str] = None, model_index: i
     return pd.DataFrame(rows, columns=["structure_id", "element", "x", "y", "z"])
 
 
+METAL_LIGAND_DISTANCE = 2.8     # load_metal_ligands: the global coordination cutoff of cofactor_contacts
+
+
+def load_metal_ligands(path: str, *, structure_id: Optional[str] = None, model_index: int = 0,
+                       max_distance: float = METAL_LIGAND_DISTANCE) -> pd.DataFrame:
+    """The non-protein atoms bound to the metal atoms of one model (descriptive; not part of any vote).
+
+    One row per (metal atom, ligand atom) within ``max_distance``: ``structure_id``, the metal (``metal_chain``, ``metal_resname``,
+    ``metal_number``, ``metal_atom``, ``metal_element``), the ligand (``ligand_chain``, ``ligand_resname``, ``ligand_number``,
+    ``ligand_atom``, ``ligand_element``), ``distance`` and ``water``. A ligand atom is a heavy atom of a hetero residue or a
+    water (anything :func:`load_atoms` does not load) that lies in a residue other than the metal's own: waters, small molecules
+    such as O2, CO, azide or peroxide, bound ions, and modified amino acids. A metal atom is any atom of a metal element in a
+    hetero residue (a free ion, or the iron of a heme). Of an atom with alternate locations the first conformer is kept, as in
+    :func:`load_atoms`. The identity of such a ligand depends on the experiment (a soaked inhibitor, a reaction intermediate), so it
+    is reported per structure and never voted on; see docs/scope_checks/12_oxidase_metal_ligands.md.
+    """
+    from .io_utils import unpack_pdb_file
+
+    structure, _ = unpack_pdb_file(str(path))
+    sid = structure_id or Path(path).stem
+    records, metals = [], []
+    for chain in list(structure)[model_index]:
+        for residue in chain:
+            if residue.id[0] == " ":
+                continue
+            chosen: Dict[str, object] = {}
+            for atom in residue.get_unpacked_list():
+                if atom.element.upper() in ("H", "D"):
+                    continue
+                kept = chosen.get(atom.get_id())
+                if kept is None or atom.get_altloc() < kept.get_altloc():
+                    chosen[atom.get_id()] = atom
+            for atom in chosen.values():
+                record = (chain.id, residue.resname.strip().upper(), int(residue.id[1]), residue.id[2].strip(), atom.get_id(),
+                          atom.element.upper(), residue.id[0] == "W", *(float(v) for v in atom.coord))
+                records.append(record)
+                if record[5] in METAL_ION_RESNAMES:
+                    metals.append(len(records) - 1)
+    columns = ["structure_id", "metal_chain", "metal_resname", "metal_number", "metal_atom", "metal_element", "ligand_chain", "ligand_resname",
+               "ligand_number", "ligand_atom", "ligand_element", "distance", "water"]
+    rows = []
+    if metals and records:
+        xyz = np.array([r[7:10] for r in records])
+        i, j, d = _close_pairs(xyz[metals], xyz, max_distance)
+        for a, b, distance in zip(i, j, d):
+            m, l = records[metals[a]], records[b]
+            if (m[0], m[1], m[2], m[3]) == (l[0], l[1], l[2], l[3]):
+                continue                                          # an atom of the metal's own residue (a porphyrin N, the ion itself)
+            rows.append((sid, m[0], m[1], m[2], m[4], m[5], l[0], l[1], l[2], l[4], l[5], float(distance), bool(l[6])))
+    frame = pd.DataFrame(rows, columns=columns).sort_values(["metal_chain", "metal_number", "metal_atom", "distance"], ignore_index=True)
+    return _with_rules(frame, "metal_ligands", max_distance=max_distance)
+
+
 def _metal_coordinated(frame: pd.DataFrame, xyz: np.ndarray, metals: pd.DataFrame) -> np.ndarray:
     """Atoms of ``frame`` that a metal coordinates: ``bond`` tier, or the global 2.8 A when the pair is not in the table."""
     coordinated = np.zeros(len(frame), bool)
@@ -870,7 +923,7 @@ def chemistry_summary(votes: pd.DataFrame, *, local_separation: Optional[pd.Seri
 
 
 # ----------------------------------------------------------------------------- provenance
-RULE_TABLES = ("residue_contacts", "cofactor_contacts", "water_bridges", "relay_steps", "conserved_contacts")
+RULE_TABLES = ("residue_contacts", "cofactor_contacts", "water_bridges", "relay_steps", "conserved_contacts", "metal_ligands")
 
 
 def class_rules(table: Optional[str] = None, **parameters) -> pd.DataFrame:
@@ -966,6 +1019,11 @@ def class_rules(table: Optional[str] = None, **parameters) -> pd.DataFrame:
         link, steps = given(relay_steps, "link"), given(relay_steps, "max_steps")
         add("relay_steps", "steps", f"fewest links from the source atoms to a residue through residue N/O atoms and waters; two nodes link within {link:g} A; "
             f"a residue reached only by its backbone N or O is a terminal; at most {steps} links", link)
+    if table in (None, "metal_ligands"):
+        reach = parameters.get("max_distance") or METAL_LIGAND_DISTANCE
+        add("metal_ligands", "ligand", f"a heavy atom of a hetero residue or water (anything the atom loader skips) within {reach:g} A of a metal atom of another residue; "
+            "descriptive per structure, never voted: the species (water, O2, CO, azide, peroxide, ...) reflects the experiment", reach, "opt-in")
+        add("metal_ligands", "water", "the ligand atom belongs to a water residue")
     if table in (None, "conserved_contacts"):
         fraction, support = given(sequence_vote, "structure_fraction"), given(sequence_vote, "support")
         minimum = given(sequence_vote, "min_sequences")
