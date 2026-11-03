@@ -156,9 +156,18 @@ sequence), `manifest.json` and `SUMMARY.md`. The manifest records the log format
 sequences, structures and negative sequences a contact can take), the parameters you pass, and for each table its file, row count, columns (with types and the rule behind each
 column from the legend that travels with the table) and the legends themselves. `SUMMARY.md` is the same for a person: the fixed statement of what the log means, the dataset and group
 depth (a group with no tolerated negative sequence is called out), the tables, the headline counts, metal ligands by species, the parameters and the rules in force. The writer
-refuses to replace an existing log unless asked and never touches other files in the folder. It writes no directives: what a directive may say is a separate decision, and the
-tests check that nothing the log writes claims importance or prediction outside its fixed statement. Composing the analysis functions into a pipeline (a command, single-protein mode)
-is not part of the writer.
+refuses to replace an existing log unless asked and never touches other files in the folder. The tests check that nothing the log writes claims importance or prediction outside
+its fixed statement. Composing the analysis functions into a pipeline (a command, single-protein mode) is not part of the writer.
+
+**Directives (decided 2026-11-02).** Optional: `contact_directives(contacts, structures)` and `cofactor_directives(vote, structures, flags)` turn the vote tables into
+`retain_contact` and `retain_cofactor_contact` directives, which `write_log(..., directives=...)` writes as `directives.csv` with the policy in the manifest and summary. A directive
+only restates one row of a table with its evidence: the groups in which the contact (or cofactor class) is conserved, and for every group the voting sequences, the positives and the
+spare negatives. Its `claim_level` is `descriptive`: it makes no claim about the effect of keeping or changing the position. Tiers, by fixed rules: `conserved_in_all` (every group passes the
+support rule: the headline), `family_specific` (exactly one group passes, and every other group has voting sequences and shows the contact in under half of them) and
+`conserved_in_subset` (everything else conserved somewhere). A group with no voting sequences for a pair is never counted as showing it absent, and the statement names it. The statement
+is generated from a template; nothing is written by hand, a directive with another tier or claim level is refused, and a test scans the statements and the policy for importance wording. On
+the oxidase set the 2,787 pairs conserved in some group give 490 conserved_in_all, 208 family_specific and 2,089 conserved_in_subset; on the 12 plastocyanins all 182 directives (168 contacts,
+14 cofactor classes) are conserved_in_all.
 
 ## Loading structures
 

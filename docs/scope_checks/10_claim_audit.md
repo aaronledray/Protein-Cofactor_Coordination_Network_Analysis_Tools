@@ -31,6 +31,7 @@ script docstrings, the legends that `class_rules` generates, figure captions and
 - The Met tiers (2.7 and 3.3 A) are labelled conventions wherever they appear.
 - The surveys state their samples (atomic-resolution X-ray, one chain per 30% cluster, first model) and that hydrogens are placed.
 - The rules legend (`class_rules`) is generated from the parameters used and is checked against the code at every documented cutoff.
+- Directives (added 2026-11-02) are restatements of table rows with their evidence, generated from fixed templates; the tests refuse a directive with another tier or claim level and scan the statements, the policy and everything the log writes for importance or predictive wording.
 
 ## Not resolved here
 
