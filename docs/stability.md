@@ -49,7 +49,7 @@ releases and they are not part of the labeling contract:
   links, the sequence vote and its depth, anchor and backbone audits, metal-bound ligands, neighbor contacts, sulfur acceptors) and `protonation`
   (optional PROPKA and `reduce`, hydrogen placement), `conserved_wires` (path signatures and independent routes across structure sets),
   `coordination_table` (per-metal, per-donor coordination tiers), `site_figures` (human-check figures for a metal site) and `design_log`
-  (the log folder: tidy tables, manifest and summary)
+  (the log folder: tidy tables, manifest and summary) and `conserve_cli` (`sscna conserve`: a manifest and position map in, a log folder out)
 
 Wire and substrate results are structural hypotheses, not rate, binding, or
 reactivity calculations.

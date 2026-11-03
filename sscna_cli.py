@@ -6,7 +6,8 @@ interactive viewer for one structure (``modules/analyze_cli.py``).
 ``sscna compare`` exposes the newer pairwise and
 family-profile workflows; ``sscna wire`` exposes opt-in cofactor-to-target
 protein-wire analysis; ``sscna substrate`` traces opt-in chains from a
-hypothetical substrate point through the coordination network.
+hypothetical substrate point through the coordination network; ``sscna conserve``
+(experimental) writes a conserved-interaction log for a set of structures.
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ def _help_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "command",
-        choices=("analyze", "compare", "wire", "substrate"),
-        help="analyze one structure, compare structures/profiles, find cofactor-to-target wires, or trace substrate-point chains",
+        choices=("analyze", "compare", "wire", "substrate", "conserve"),
+        help="analyze one structure, compare structures/profiles, find cofactor-to-target wires, trace substrate-point chains, or write a conserved-interaction log (experimental)",
     )
     return parser
 
@@ -252,6 +253,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return _wire(command_args)
     if command == "substrate":
         return _substrate(command_args)
+    if command == "conserve":
+        from modules.conserve_cli import main as conserve_main
+
+        return conserve_main(command_args)
     _help_parser().error(f"invalid command: {command}")
     return 2
 

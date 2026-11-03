@@ -171,6 +171,26 @@ the oxidase set the 2,787 pairs conserved in some group give 490 conserved_in_al
 
 Thresholds kept at 90% support and 0.5 for family-specific (2026-11-03, "for now"): the support rule matches the manuscript. On the oxidase set the all-groups count is 552 / 490 / 406 / 360 at 80 / 90 / 95 / 100% support, and the family-specific count is 181 / 208 / 277 at 0.25 / 0.5 / 0.75 (90% support); both are parameters of `contact_directives` and `cofactor_directives` and are recorded in the manifest.
 
+## Command line: `sscna conserve` (experimental)
+
+`sscna conserve --manifest structures.csv --output-dir log/` runs the vote on a set of structures and writes the log folder (`modules/conserve_cli.py`, a thin
+layer over `conserved_contacts`, `cofactor_contacts`, `sequence_vote`, `load_metal_ligands` and `write_log`; it adds no analysis of its own and its tests check that
+the log equals the API's tables).
+
+- **Manifest CSV**, one row per structure: `structure_id`, `path` (relative paths are taken from the manifest's folder) and `sequence_id` (structures of one sequence
+  share one vote); optional `group` (default `all`) and `chain` (default `A`; the first model is read).
+- **Position map CSV** (optional), long format: `structure_id`, `residue_number`, optional `insertion_code`, `position`. Residues without a row are left out. Without a
+  map the residue number is the position, which is right only when the numbering is already common to the set. Building the map (an alignment) stays the caller's.
+- **Defaults** are the manuscript's rules: support 0.90, five voting sequences per group, 4.0 A. Written without options: `conserved_contacts`
+  (with the depth of the vote, `coverage=True`), `audit_backbone_only` and `structures`.
+- **Opt-in**: `--metals CU,FE` (cofactor features, one per metal element, which adds `cofactor_contacts`; two metals of one element in a structure are one feature, so use the
+  API with a `features` table for sites such as CuA and CuB), `--coordination-tiers` (bond/weak/ligated flags), `--anchor POSITION` (the anchor audit against the first
+  metal), `--metal-ligands`, `--sulfur-acceptor`, `--neighbor-contacts`, `--directives`. `--overwrite` replaces an existing log; without it an existing log is an error.
+- A group with fewer sequences than `--min-sequences` is named in the manifest notes; if directives are requested and nothing is conserved, `directives.csv` is not
+  written and the notes say so. Errors in the inputs are reported on stderr with exit code 2.
+- It runs in one process and holds every structure's atoms in memory; the 249-structure oxidase set peaked near 2.5 GB.
+- Not included: state stratification, the water-bridge and relay tables, and wires across structure sets (use the API).
+
 ## Loading structures
 
 `load_atoms(path, chain, position_map)` reads one chain of the first model (`model_index`) with Biopython. For
