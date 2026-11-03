@@ -140,7 +140,7 @@ class DirectiveTests(unittest.TestCase):
         row = d.loc["contact 3-5"]                                       # the sequence that breaks it is in g1: 5 of 6 fails there, g2 passes
         self.assertEqual((row["tier"], row["conserved_in"], row["failing_groups"], row["positives_g1"], row["spare_negatives_g1"]), ("conserved_in_subset", "g2", "g1", 5, -1))
         self.assertEqual(set(self.directives["claim_level"]), {"descriptive"})
-        self.assertEqual(self.directives["directive_id"].iloc[0], "retain_contact:1-3")
+        self.assertEqual(self.directives["directive_id"].iloc[0], "conserved_contact:1-3")
 
     def test_a_group_specific_contact_needs_the_others_to_show_it_in_under_half_their_sequences(self):
         atoms, structures = specific_dataset()
@@ -228,10 +228,10 @@ class DirectiveTests(unittest.TestCase):
         cof["bond"] = cof["coord_tier"] == "bond"
         vote = ci.sequence_vote(cof, structures, ["feature", "position"], ["bond", "contact"])
         d = design_log.cofactor_directives(vote, structures, ["bond", "contact"]).set_index("directive_id")
-        self.assertEqual(d.loc["retain_cofactor_contact:Cu:1:bond", "tier"], "conserved_in_all")
-        self.assertEqual(d.loc["retain_cofactor_contact:Cu:1:contact", "tier"], "conserved_in_all")
-        self.assertEqual(d.loc["retain_cofactor_contact:Cu:2:contact", "tier"], "family_specific")                    # in g2 only; g1 has voters and none positive
-        self.assertNotIn("retain_cofactor_contact:Cu:2:bond", d.index)                                                # not conserved anywhere
+        self.assertEqual(d.loc["conserved_cofactor_contact:Cu:1:bond", "tier"], "conserved_in_all")
+        self.assertEqual(d.loc["conserved_cofactor_contact:Cu:1:contact", "tier"], "conserved_in_all")
+        self.assertEqual(d.loc["conserved_cofactor_contact:Cu:2:contact", "tier"], "family_specific")                    # in g2 only; g1 has voters and none positive
+        self.assertNotIn("conserved_cofactor_contact:Cu:2:bond", d.index)                                                # not conserved anywhere
         self.assertEqual(set(d["cofactor_class"]), {"bond", "contact"})
         self.assertEqual(design_log.cofactor_directives(vote.iloc[0:0], structures, ["bond"]).shape[0], 0)
 

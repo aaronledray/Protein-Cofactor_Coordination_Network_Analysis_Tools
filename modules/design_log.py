@@ -154,22 +154,22 @@ def _directives(vote: pd.DataFrame, structures: pd.DataFrame, *, keys: Sequence[
 
 def contact_directives(contacts: pd.DataFrame, structures: pd.DataFrame, *, support: float = 0.90, min_sequences: int = 5,
                        specific_below: float = 0.5) -> pd.DataFrame:
-    """Descriptive ``retain_contact`` directives from the output of ``conserved_contacts``: one per pair conserved in at least one group.
+    """Descriptive ``conserved_contact`` directives from the output of ``conserved_contacts``: one per pair conserved in at least one group.
 
     The chemistry column lists the contact classes and flags that are conserved for the pair.
     """
     from .conserved_interactions import CONTACT_CLASSES, CONTACT_FLAGS, SULFUR_FLAGS
 
     names = [c for c in (*CONTACT_CLASSES, *CONTACT_FLAGS, *SULFUR_FLAGS) if f"conserved_{c}" in contacts.columns]
-    return _directives(contacts, structures, keys=["position_a", "position_b"], flag="contact", directive="retain_contact", source_table="conserved_contacts",
+    return _directives(contacts, structures, keys=["position_a", "position_b"], flag="contact", directive="conserved_contact", source_table="conserved_contacts",
                        subject=lambda r: f"contact {r['position_a']}-{r['position_b']}", identifier=lambda r: f"{r['position_a']}-{r['position_b']}", chemistry=lambda r: ";".join(c for c in names if _is_true(r.get(f"conserved_{c}"))),
                        support=support, min_sequences=min_sequences, specific_below=specific_below)
 
 
 def cofactor_directives(vote: pd.DataFrame, structures: pd.DataFrame, flags: Sequence[str], *, support: float = 0.90, min_sequences: int = 5,
                         specific_below: float = 0.5) -> pd.DataFrame:
-    """Descriptive ``retain_cofactor_contact`` directives from a ``sequence_vote`` over (feature, position): one per class in ``flags``."""
-    frames = [_directives(vote, structures, keys=["feature", "position"], flag=flag, directive="retain_cofactor_contact", source_table="cofactor_contacts",
+    """Descriptive ``conserved_cofactor_contact`` directives from a ``sequence_vote`` over (feature, position): one per class in ``flags``."""
+    frames = [_directives(vote, structures, keys=["feature", "position"], flag=flag, directive="conserved_cofactor_contact", source_table="cofactor_contacts",
                           subject=lambda r, flag=flag: f"{r['feature']} position {r['position']} class {flag}",
                           identifier=lambda r, flag=flag: f"{r['feature']}:{r['position']}:{flag}",
                           support=support, min_sequences=min_sequences, specific_below=specific_below).assign(cofactor_class=flag) for flag in flags]
