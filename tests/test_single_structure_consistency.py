@@ -53,7 +53,7 @@ class CommandLineTests(unittest.TestCase):
                 self.assertEqual(len(written), len(expected), table)
                 for column in expected.columns:
                     numeric = pd.to_numeric(expected[column], errors="coerce")
-                    if expected[column].dtype.kind == "f" or (expected[column].dtype == object and numeric.notna().all() and column.endswith("_A")):
+                    if expected[column].dtype.kind == "f" or (column.endswith("_A") and numeric.notna().all()):      # by value, not dtype: pandas 3 has a str dtype
                         # the links table keeps distances as three-decimal strings ('2.010', a pinned legacy format); compare the values
                         np.testing.assert_allclose(pd.to_numeric(written[column]).to_numpy(float), numeric.to_numpy(float), atol=1e-9, err_msg=f"{table}.{column}")
                     else:
