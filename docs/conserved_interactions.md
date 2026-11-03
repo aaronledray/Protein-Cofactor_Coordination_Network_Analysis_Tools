@@ -69,9 +69,17 @@ Two controls, both on the heme-copper oxidase set (54 sequences in groups A, B1 
   atypical C sequence removes the whole set (a shuffle replicate that scrambled one sequence left 6 of 490). The three C sequences that block the most
   contacts alone hold back 7 to 11 contacts each. In group A, 16 of the 490 have no spare negative and in B1 36. In the plastocyanins 41 of 168 have none.
 
-So a conserved contact is as reliable as the smallest group is deep. A log should carry, for every contact, the number of voting sequences
-per group and the spare negatives (the coverage column that is still open in the TODO), and should say that group C conservation means
-conserved in each of five sequences.
+So a conserved contact is as reliable as the smallest group is deep. `conserved_contacts(..., coverage=True)` (opt-in) adds that depth to every
+contact: `spare_negatives_<group>` and `spare_voters_<group>` (negative when the group fails), `conserved_in` (the groups it passes, for example `A+B1`),
+`failing_groups`, `held_back_by` (when exactly one group fails and leaving out one of its negative sequences would make it pass, those sequences) and
+`one_negative_away` (the same ignoring the minimum number of voting sequences, which is what names the group C sequence a 4-of-5 contact lacks). The
+conserved set and the default columns do not change. `vote_coverage` computes the same from the table of `sequence_votes`.
+
+**Group C (decision, 2026-11-02).** On the oxidase set the headline stays the manuscript's rule: all three groups at 90% with at least five voting
+sequences (490 contacts). Treatments of group C change the claim, not just the count: requiring only A and B1 gives 721 (231 of them not conserved in C),
+letting C have one negative gives 523, and 642 contacts are conserved in C but not in A and B1 (`docs/scope_checks/11_group_options.md`). A log therefore carries the
+490 as the headline and, beside each contact, the groups it is conserved in and the depth columns above, and says that group C conservation means conserved in each of
+five sequences. Changing the headline would be a change to the manuscript's rule and has to be made there too.
 
 ## Rules travel with the results
 

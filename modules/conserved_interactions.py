@@ -655,6 +655,49 @@ def _per_sequence_votes(data: pd.DataFrame, keys: Sequence[str], flag: str, cond
     return (share >= structure_fraction).rename("vote").reset_index()
 
 
+def vote_coverage(votes: pd.DataFrame, groups: Sequence[str], *, support: float = 0.90, min_sequences: int = 5) -> pd.DataFrame:
+    """How deep the vote behind each key is, from the table of :func:`sequence_votes`.
+
+    One row per key (the columns of ``votes`` other than ``group``, ``sequence_id`` and ``vote``) with, for each group ``g``:
+    ``spare_negatives_<g>`` (how many further negative sequences the key could take and still pass: ``floor(n (1 - support))``
+    minus its negatives, so negative when the group fails on support) and ``spare_voters_<g>`` (voting sequences above
+    ``min_sequences``; negative when the group is too small to count). Also ``conserved_in`` (the groups, joined by ``+``,
+    whose support rule the key passes), ``failing_groups`` (the others), and ``held_back_by``: when exactly one group fails and
+    leaving out any single one of its negative sequences would make it pass, those sequences' ids joined by ``;``
+    (a group that fails because it has too few voting sequences is never held back by a sequence). ``one_negative_away`` is the
+    same without the minimum: exactly one group fails, and leaving out any single one of its negative sequences would bring its
+    positive share up to ``support`` (the group may still be below the minimum number of voting sequences, as a group of exactly
+    ``min_sequences`` always is once a sequence is left out). A key is conserved (:func:`sequence_vote`) exactly when ``failing_groups`` is empty.
+    """
+    groups = list(groups)
+    keys = [c for c in votes.columns if c not in ("group", "sequence_id", "vote")]
+    grouped = votes.groupby(keys + ["group"], sort=False)["vote"]
+    n = grouped.count().unstack("group").reindex(columns=groups).fillna(0).astype(int)
+    pos = grouped.sum().unstack("group").reindex(columns=groups).fillna(0).astype(int)
+    out = pd.DataFrame(index=n.index)
+    passing, rescued, by_support_only = {}, {}, {}
+    for g in groups:
+        negatives = n[g] - pos[g]
+        out[f"spare_negatives_{g}"] = np.floor(n[g] * (1 - support) + 1e-9).astype(int) - negatives
+        out[f"spare_voters_{g}"] = n[g] - min_sequences
+        passing[g] = (n[g] >= min_sequences) & (pos[g] / n[g].where(n[g] > 0) >= support)
+        by_support = (negatives >= 1) & (pos[g] / (n[g] - 1).where(n[g] > 1) >= support)
+        rescued[g] = by_support & (n[g] - 1 >= min_sequences)
+        by_support_only[g] = by_support
+    passes = pd.DataFrame(passing)
+    out["conserved_in"] = ["+".join(g for g in groups if row[g]) for row in passes.to_dict("records")]
+    out["failing_groups"] = ["+".join(g for g in groups if not row[g]) for row in passes.to_dict("records")]
+    out["held_back_by"] = ""
+    out["one_negative_away"] = ""
+    negative_ids = votes[~votes["vote"].astype(bool)].groupby(keys + ["group"], sort=False)["sequence_id"].apply(lambda s: ";".join(sorted(s)))
+    single = (~passes).sum(axis=1) == 1
+    for g in groups:
+        for column, rescue in (("held_back_by", rescued[g]), ("one_negative_away", by_support_only[g])):
+            for key in out.index[single & ~passes[g] & rescue]:
+                out.loc[key, column] = negative_ids.get((*key, g) if isinstance(key, tuple) else (key, g), "")
+    return out.reset_index()
+
+
 def sequence_vote(observations: pd.DataFrame, structures: pd.DataFrame, keys: Sequence[str], flags: Sequence[str], *,
                   condition: Optional[str] = None, structure_fraction: float = 0.5, support: float = 0.90,
                   min_sequences: int = 5, groups: Optional[Sequence[str]] = None) -> pd.DataFrame:
@@ -720,7 +763,7 @@ def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups:
                        cutoff: float = 4.0, min_separation: int = 2, support: float = 0.90, min_sequences: int = 5,
                        structure_fraction: float = 0.5, sulfur_acceptor: bool = False,
                        metals: Optional[pd.DataFrame] = None, neighbor_contacts: bool = False,
-                       neighbor_chemistry: Sequence[str] = NEIGHBOR_CHEMISTRY) -> pd.DataFrame:
+                       neighbor_chemistry: Sequence[str] = NEIGHBOR_CHEMISTRY, coverage: bool = False) -> pd.DataFrame:
     """Contacts passing the sequence vote, with the conserved chemistry of each.
 
     Every pair of positions mapped in a structure is a candidate; the contact vote counts
@@ -730,7 +773,9 @@ def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups:
     :func:`residue_contacts` (opt-in), which adds the ``polar_s*`` flags to the voted chemistry;
     ``neighbor_contacts`` adds the polar and ionic contacts between sequence neighbors, voted like any other
     pair (a structure is negative when both positions are present and the pair has no such atom pair);
-    ``neighbor_chemistry`` selects its classes.
+    ``neighbor_chemistry`` selects its classes. ``coverage=True`` (opt-in) adds the depth of the vote behind every contact from
+    :func:`vote_coverage`: ``conserved_in``, ``failing_groups``, ``held_back_by``, ``one_negative_away`` and the spare negatives and voters per
+    group; the default columns and the conserved set do not change.
     """
     obs = contact_observations(atoms, cutoff=cutoff, min_separation=min_separation, sulfur_acceptor=sulfur_acceptor, metals=metals,
                                neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry)
@@ -740,7 +785,12 @@ def conserved_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, groups:
     chem = sequence_vote(obs, structures, keys, list(CONTACT_CLASSES) + list(CONTACT_FLAGS) + (list(SULFUR_FLAGS) if sulfur_acceptor else []),
                          condition="contact", groups=groups,
                          support=support, min_sequences=min_sequences, structure_fraction=structure_fraction)
-    return _with_rules(base.merge(chem, on=keys, how="left"), "conserved_contacts", cutoff=cutoff, min_separation=min_separation,
+    result = base.merge(chem, on=keys, how="left")
+    if coverage:
+        used_groups = list(groups) if groups is not None else sorted(structures["group"].unique())
+        votes = sequence_votes(obs, structures, keys, "contact", structure_fraction=structure_fraction)
+        result = result.merge(vote_coverage(votes, used_groups, support=support, min_sequences=min_sequences), on=keys, how="left")
+    return _with_rules(result, "conserved_contacts", coverage=coverage, cutoff=cutoff, min_separation=min_separation,
                        sulfur_acceptor=sulfur_acceptor, neighbor_contacts=neighbor_contacts, neighbor_chemistry=neighbor_chemistry, support=support, min_sequences=min_sequences, structure_fraction=structure_fraction)
 
 
@@ -918,6 +968,22 @@ def class_rules(table: Optional[str] = None, **parameters) -> pd.DataFrame:
             f"a residue reached only by its backbone N or O is a terminal; at most {steps} links", link)
     if table in (None, "conserved_contacts"):
         fraction, support = given(sequence_vote, "structure_fraction"), given(sequence_vote, "support")
+        minimum = given(sequence_vote, "min_sequences")
+        coverage_notes = [
+            ("conserved_in", f"the groups whose support rule the contact passes (at least {support:.0%} of at least {minimum} voting sequences positive), joined by '+'; "
+                             "the contact is conserved when all groups pass"),
+            ("failing_groups", "the groups it does not pass"),
+            ("spare_negatives_<group>", f"further negative sequences the contact could take in that group and still pass: floor(n x {1 - support:.0%}) minus its negatives; "
+                                        "negative when the group fails on support"),
+            ("spare_voters_<group>", f"voting sequences in that group above the minimum of {minimum}; negative when the group is too small to count"),
+            ("held_back_by", "when exactly one group fails and leaving out any single one of its negative sequences would make it pass, those sequence ids; "
+                             "a group that is too small is never held back by a sequence"),
+            ("one_negative_away", "as held_back_by but ignoring the minimum number of voting sequences: leaving out one negative sequence would bring the "
+                                  "failing group's positive share up to the support (a group at the minimum is always below it afterwards)"),
+        ]
+        for name, text in coverage_notes:
+            note = "" if parameters.get("coverage", False) else " [not computed in this table: coverage was off]"
+            add("conserved_contacts", name, text + note, np.nan, "opt-in")
         minimum = given(sequence_vote, "min_sequences")
         add("conserved_contacts", "conserved_<flag>", f"one vote per sequence: positive when at least {fraction:.0%} of the sequence's structures show it; "
             f"conserved when every group has at least {minimum} voting sequences and at least {support:.0%} of them positive; chemistry flags are voted "
