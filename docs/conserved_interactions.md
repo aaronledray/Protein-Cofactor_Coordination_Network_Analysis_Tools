@@ -189,7 +189,30 @@ the log equals the API's tables).
 - A group with fewer sequences than `--min-sequences` is named in the manifest notes; if directives are requested and nothing is conserved, `directives.csv` is not
   written and the notes say so. Errors in the inputs are reported on stderr with exit code 2.
 - It runs in one process and holds every structure's atoms in memory; the 249-structure oxidase set peaked near 2.5 GB.
-- Not included: state stratification, the water-bridge and relay tables, and wires across structure sets (use the API).
+- Not included: state stratification across a set of sequences, the water-bridge and relay tables, and wires across structure sets (use the API).
+
+### Single-protein mode (`--single-protein`, decided 2026-11-03)
+
+With one sequence the vote has nothing to count (one vote; the minimum of five voting sequences per group can never be met), so the structures of the protein
+(entries, chains, states) are the evidence instead (`modules/single_protein.py`). They are not independent (the same crystal form, laboratory and refinement),
+so **nothing in this mode is evidence of conservation**, and the log says so in its manifest and summary.
+
+- **Input:** the same manifest, with exactly one `sequence_id` (several are refused: use the vote), an optional `state` column (for example `ox`, `red`; labels are
+  letters, digits and underscores) and `group` ignored. One structure alone is allowed; the log then notes that persistence cannot be assessed.
+  `--support`, `--min-sequences`, `--sulfur-acceptor`, `--neighbor-contacts` and `--anchor` are refused (they belong to the vote or the alignment).
+- **`contact_persistence`:** one row per residue pair in contact (the `residue_contacts` rules) in at least one structure: `structures_present` (structures that map both
+  positions; one that lacks a position is not a negative), `structures_in_contact`, `fraction_in_contact`, the closest heavy-atom distance in each structure as
+  `closest_min` / `closest_median` / `closest_max` (a distance beyond cutoff + 2 A is recorded as that limit), `chemistry` (classes true in every structure where the pair
+  is in contact) and `near_cutoff` (the median within `--near-margin`, default 0.3 A, of the cutoff). With two or more states, `present_<state>` and `in_contact_<state>`.
+- **`cofactor_persistence`** (with `--metals`, optionally `--coordination-tiers`): per (feature, position), the structures in which each class holds out of the structures
+  in which the residue is recorded, and the distance to the feature. There is no `near_cutoff` here (the classes use different cutoffs).
+- **Why distance is reported:** within one sequence most of the variation between structures sits at the cutoff. In the plastocyanin set 12 to 26% of the candidate pairs of a
+  sequence were in contact in some of its structures but not all (P00299, 8 structures: 72 of 307), the closest approach of those pairs had a median of 3.75 to 3.9 A in the three sequences with several structures (the cutoff is 4.0), and about a third of
+  the pairs present in every structure lay within 0.3 A of the cutoff. A yes/no list mostly records where the cutoff falls.
+- **Directives (opt-in, claim level `observed`):** `observed_contact` and `observed_cofactor_contact`, restating a row with its counts and distances. Tiers by fixed rules:
+  `observed_in_all_structures` (in contact in every structure that shows both positions, and at least two), `observed_in_one_structure` (in contact in exactly one structure,
+  whatever the number of structures that show both positions) and `observed_in_some_structures` (the rest). The wording scan of the tests covers this mode too.
+- **Log:** the same folder with `"mode": "single_protein"` in the manifest and the states recorded in `structures.csv`; there is no `conserved_contacts` table.
 
 ## Loading structures
 

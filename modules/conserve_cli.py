@@ -9,6 +9,9 @@ Position-map CSV (long format): ``structure_id``, ``residue_number``, optional `
 label, for example an alignment column). Residues of a structure without a row are left out, as in :func:`load_atoms`. With no
 map the residue number is the position, which is right only when the numbering is already common to the set.
 
+With ``--single-protein`` the manifest must name one ``sequence_id`` (an optional ``state`` column labels the structures) and the log reports,
+per contact, in how many structures of that protein it is seen and how close the residues come, instead of the vote (see :mod:`modules.single_protein`).
+
 Defaults are the manuscript's rules (90% support, five voting sequences per group, 4.0 A contacts). The sulfur acceptor, neighbor
 contacts, coordination tiers, metal ligands, directives and audits are opt-in. The vote holds every structure's atoms in memory
 (the 54-sequence, 249-structure oxidase set peaked near 2.5 GB); it runs in one process.
@@ -25,6 +28,7 @@ import pandas as pd
 
 from . import conserved_interactions as ci
 from . import design_log
+from . import single_protein
 
 REQUIRED_MANIFEST = ("structure_id", "path", "sequence_id")
 COFACTOR_FLAGS = ("coord", "polar", "ionic", "contact")
@@ -110,9 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--position-map", help="CSV with structure_id, residue_number, [insertion_code], position; default: the residue number")
     parser.add_argument("--output-dir", required=True, help="log folder to write")
     parser.add_argument("--overwrite", action="store_true", help="replace an existing log in --output-dir")
-    parser.add_argument("--title", default="Conserved-interaction log")
-    parser.add_argument("--support", type=float, default=0.90, help="share of voting sequences that must show a contact (default 0.90)")
-    parser.add_argument("--min-sequences", type=int, default=5, help="voting sequences a group needs to count (default 5)")
+    parser.add_argument("--title", default=None, help="title of the log (default: a title for the mode)")
+    parser.add_argument("--support", type=float, default=None, help="share of voting sequences that must show a contact (default 0.90)")
+    parser.add_argument("--min-sequences", type=int, default=None, help="voting sequences a group needs to count (default 5)")
     parser.add_argument("--cutoff", type=float, default=4.0, help="residue contact distance in Angstrom (default 4.0)")
     parser.add_argument("--metals", help="comma-separated metal elements to treat as cofactor features, e.g. CU,FE (adds cofactor_contacts)")
     parser.add_argument("--coordination-tiers", action="store_true", help="opt-in: bond/weak tiers per metal and donor atom for the cofactor contacts (needs --metals)")
@@ -120,12 +124,64 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sulfur-acceptor", action="store_true", help="opt-in: sulfur hydrogen-bond acceptor flags")
     parser.add_argument("--neighbor-contacts", action="store_true", help="opt-in: polar and ionic contacts between sequence neighbors")
     parser.add_argument("--anchor", help="position of an anchor residue to audit against the first --metals element (adds audit_anchor)")
-    parser.add_argument("--directives", action="store_true", help="opt-in: write the descriptive directives (directives.csv)")
+    parser.add_argument("--directives", action="store_true", help="opt-in: write the directives (directives.csv; descriptive, or observed with --single-protein)")
+    parser.add_argument("--single-protein", action="store_true", help="the structures are of one protein (one sequence_id): report how many show each contact and the distances, not the vote")
+    parser.add_argument("--near-margin", type=float, default=single_protein.NEAR_MARGIN, help="--single-protein: flag a contact whose median closest distance is within this many A of the cutoff (default 0.3)")
     return parser
+
+
+def _stack(pieces: List[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    """Directives of several kinds as one table; integral positions stay integers where another kind leaves them empty."""
+    return pd.concat(pieces, ignore_index=True).convert_dtypes() if pieces else None
+
+
+def run_single(args: argparse.Namespace, manifest: pd.DataFrame, atoms: pd.DataFrame, metals: Optional[pd.DataFrame], elements: List[str]) -> Path:
+    """The single-protein log: persistence across the structures of one sequence, no vote."""
+    structures = manifest[["structure_id", "group", "sequence_id"] + (["state"] if "state" in manifest.columns else [])]
+    notes = []
+    if structures["structure_id"].nunique() == 1:
+        notes.append("one structure: every contact is observed in one structure and nothing can be said about persistence")
+    tables = {"contact_persistence": single_protein.contact_persistence(atoms, structures, cutoff=args.cutoff, near_margin=args.near_margin),
+              "audit_backbone_only": ci.backbone_only_audit(atoms)}
+    directives = [design_log.observed_contact_directives(tables["contact_persistence"], structures)] if args.directives else []
+    if elements:
+        features = metal_features(metals, elements)
+        if features.empty:
+            raise ValueError(f"no {', '.join(elements)} atoms found in the structures")
+        model = "by_pair" if args.coordination_tiers else None
+        flags = list(COFACTOR_FLAGS) + (list(TIER_FLAGS) if model else [])
+        cofactor = ci.cofactor_contacts(atoms, features, coordination_model=model)
+        if model:
+            cofactor["bond"] = cofactor["coord_tier"] == "bond"
+            cofactor["weak"] = cofactor["coord_tier"] == "weak"
+            cofactor["ligated"] = cofactor["bond"] | cofactor["weak"]
+        tables["cofactor_persistence"] = single_protein.cofactor_persistence(cofactor, structures, flags)
+        if args.directives:
+            directives.append(design_log.observed_cofactor_directives(tables["cofactor_persistence"], structures, flags))
+    if args.metal_ligands:
+        tables["metal_ligands"] = pd.concat([ci.load_metal_ligands(row.path, structure_id=row.structure_id) for row in manifest.itertuples()], ignore_index=True)
+    parameters = {"mode": "single_protein", "cutoff": args.cutoff, "near_margin": args.near_margin, "metals": elements, "coordination_tiers": args.coordination_tiers,
+                  "metal_ligands": args.metal_ligands, "directives": args.directives, "manifest": str(Path(args.manifest).name),
+                  "position_map": "given" if args.position_map else "residue numbers"}
+    pieces = [d for d in directives if len(d)]
+    if args.directives and not pieces:
+        notes.append("directives were requested and no contact was observed, so directives.csv is not written")
+    return design_log.write_log(args.output_dir, tables, structures=structures, title=args.title or "Single-protein contact log", parameters=parameters, notes=notes, overwrite=args.overwrite,
+                                directives=_stack(pieces), mode="single_protein")
 
 
 def run(args: argparse.Namespace) -> Path:
     manifest = read_manifest(args.manifest)
+    if args.single_protein:
+        given = [flag for flag, value in (("--support", args.support), ("--min-sequences", args.min_sequences)) if value is not None]
+        given += [flag for flag, value in (("--sulfur-acceptor", args.sulfur_acceptor), ("--neighbor-contacts", args.neighbor_contacts), ("--anchor", args.anchor)) if value]
+        if given:
+            raise ValueError(f"{', '.join(given)} do not apply with --single-protein (they belong to the sequence vote or the alignment)")
+        manifest["group"] = "all"
+        single_protein.require_one_sequence(manifest)
+        single_protein.states_of(manifest)
+    args.support = 0.90 if args.support is None else args.support
+    args.min_sequences = 5 if args.min_sequences is None else args.min_sequences
     position_map = read_position_map(args.position_map) if args.position_map else None
     elements = split_names(args.metals)
     if args.coordination_tiers and not elements:
@@ -134,6 +190,8 @@ def run(args: argparse.Namespace) -> Path:
         raise ValueError("--anchor needs --metals")
     need_metals = bool(elements or args.sulfur_acceptor or args.neighbor_contacts)
     atoms, metals = load_set(manifest, position_map, metals=need_metals)
+    if args.single_protein:
+        return run_single(args, manifest, atoms, metals, elements)
     structures = manifest[["structure_id", "group", "sequence_id"]]
     depth = design_log.group_depth(structures, support=args.support, min_sequences=args.min_sequences)
     small = depth.loc[~depth["meets_minimum"], "group"].tolist()
@@ -175,8 +233,8 @@ def run(args: argparse.Namespace) -> Path:
     pieces = [d for d in directives if len(d)]
     if args.directives and not pieces:
         notes.append("directives were requested and nothing is conserved in any group, so directives.csv is not written")
-    return design_log.write_log(args.output_dir, tables, structures=structures, title=args.title, parameters=parameters, notes=notes,
-                                overwrite=args.overwrite, directives=pd.concat(pieces, ignore_index=True) if pieces else None)
+    return design_log.write_log(args.output_dir, tables, structures=structures, title=args.title or "Conserved-interaction log", parameters=parameters, notes=notes,
+                                overwrite=args.overwrite, directives=_stack(pieces))
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
