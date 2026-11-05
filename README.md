@@ -379,6 +379,18 @@ votes = ci.conserved_contacts(atoms, structures)           # structures: structu
 print(ci.chemistry_summary(votes))
 ```
 
+The experimental `sscna conserve` wrapper accepts a manifest CSV and optional position map. Add a `state` column and
+`--stratify-state` to keep the pooled vote while also writing state-specific residue-contact votes:
+
+```bash
+sscna conserve --manifest structures.csv --output-dir conserved_log --stratify-state
+```
+
+Every manifest row needs a state label with the same meaning across sequences and groups. State results use the same
+sequence-vote thresholds as the pooled result; they are descriptive and do not test for a state effect. Details and
+denominator rules are in [`docs/conserved_interactions.md`](docs/conserved_interactions.md#state-stratified-sequence-vote-optional). The log includes
+`state_structure_votes.csv` with the eligible and positive structure counts behind each sequence-state vote.
+
 ## Hypothetical substrate-point seeds
 
 `modules/substrate_seeds.py` is an opt-in, side-effect-free API for tracing

@@ -81,6 +81,21 @@ letting C have one negative gives 523, and 642 contacts are conserved in C but n
 490 as the headline and, beside each contact, the groups it is conserved in and the depth columns above, and says that group C conservation means conserved in each of
 five sequences. Changing the headline would be a change to the manuscript's rule and has to be made there too.
 
+## State-stratified sequence vote (optional)
+
+`sscna conserve --stratify-state` adds `state_contacts` while retaining the pooled `conserved_contacts` table. The manifest must have at least two
+non-empty `state` labels (letters, digits and underscores) with the same meaning across all sequences and groups. For each state, the command applies the existing sequence vote
+independently: within a sequence, at least half of eligible structures must show the contact; across sequences, each group still needs at least five
+voting sequences and 90% support by default. `state_structure_votes.csv` records the eligible and positive structure counts behind each sequence-state vote,
+including zero-coverage rows with a missing vote. Existing opt-in sulfur-acceptor and sequence-neighbor rules also apply when requested. A structure
+missing either position is not a negative. The output includes the contact candidates seen
+in any state, so a state with no eligible sequences has zero voters and fails the minimum explicitly.
+
+This is a descriptive within-state comparison, not a test that state causes a contact change. Structures are still equally weighted inside each
+sequence-state and may be correlated. The first version covers residue-residue contacts only; it does not stratify cofactor contacts, waters, or
+relay links. State-specific directives are not generated; `--directives` cannot be combined with `--stratify-state`. See
+[`state_stratification_design.md`](state_stratification_design.md) for the method contract.
+
 ## Rules travel with the results
 
 Every table returned by `residue_contacts`, `cofactor_contacts`, `water_bridges`, `relay_steps` and `conserved_contacts` carries a legend in `frame.attrs["rules"]`: one row per reported column with the rule in words, the distance that decides it and whether it is a default or an opt-in (`rules_of(frame)` returns it as a table, `format_rules(...)` as Markdown for a log). The legend is built from the parameters of the call that made the table, so a non-default cutoff shows up in it, and a flag that was not computed (the sulfur flags with the option off) says so. `class_rules(table, **parameters)` builds the same legend without running an analysis. Tests put a pair just inside and just outside each documented cutoff and check that the flag changes there. The legend is per table, not per row, except where the rule varies by row: `coord_rule` names the table row behind each coordination tier. `attrs` do not always survive merges or file writes, so write the legend next to the table (`format_rules`, or the `checklist.md` of `site_figures`).

@@ -11,6 +11,8 @@ map the residue number is the position, which is right only when the numbering i
 
 With ``--single-protein`` the manifest must name one ``sequence_id`` (an optional ``state`` column labels the structures) and the log reports,
 per contact, in how many structures of that protein it is seen and how close the residues come, instead of the vote (see :mod:`modules.single_protein`).
+With ``--stratify-state`` the default sequence vote is retained and an additional ``state_contacts`` table applies it independently within each
+state in the manifest; this is descriptive and does not test for a state effect.
 
 Defaults are the manuscript's rules (90% support, five voting sequences per group, 4.0 A contacts). The sulfur acceptor, neighbor
 contacts, coordination tiers, metal ligands, directives and audits are opt-in. The vote holds every structure's atoms in memory
@@ -29,6 +31,7 @@ import pandas as pd
 from . import conserved_interactions as ci
 from . import design_log
 from . import single_protein
+from . import state_stratification
 
 REQUIRED_MANIFEST = ("structure_id", "path", "sequence_id")
 COFACTOR_FLAGS = ("coord", "polar", "ionic", "contact")
@@ -126,6 +129,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--anchor", help="position of an anchor residue to audit against the first --metals element (adds audit_anchor)")
     parser.add_argument("--directives", action="store_true", help="opt-in: write the directives (directives.csv; descriptive, or observed with --single-protein)")
     parser.add_argument("--single-protein", action="store_true", help="the structures are of one protein (one sequence_id): report how many show each contact and the distances, not the vote")
+    parser.add_argument("--stratify-state", action="store_true", help="opt-in: add residue-contact votes calculated independently within each manifest state")
     parser.add_argument("--near-margin", type=float, default=single_protein.NEAR_MARGIN, help="--single-protein: flag a contact whose median closest distance is within this many A of the cutoff (default 0.3)")
     return parser
 
@@ -172,6 +176,17 @@ def run_single(args: argparse.Namespace, manifest: pd.DataFrame, atoms: pd.DataF
 
 def run(args: argparse.Namespace) -> Path:
     manifest = read_manifest(args.manifest)
+    if args.stratify_state:
+        if args.single_protein:
+            raise ValueError("--stratify-state applies to the sequence vote, not --single-protein")
+        if args.directives:
+            raise ValueError("--directives currently describe the pooled vote and cannot be combined with --stratify-state")
+        if "state" not in manifest.columns:
+            raise ValueError("--stratify-state needs a non-empty state column in the manifest")
+        if manifest["state"].eq("").any():
+            raise ValueError("--stratify-state needs a non-empty state value on every manifest row")
+        if len(single_protein.states_of(manifest)) < 2:
+            raise ValueError("--stratify-state needs at least two distinct state labels")
     if args.single_protein:
         given = [flag for flag, value in (("--support", args.support), ("--min-sequences", args.min_sequences)) if value is not None]
         given += [flag for flag, value in (("--sulfur-acceptor", args.sulfur_acceptor), ("--neighbor-contacts", args.neighbor_contacts), ("--anchor", args.anchor)) if value]
@@ -192,15 +207,26 @@ def run(args: argparse.Namespace) -> Path:
     atoms, metals = load_set(manifest, position_map, metals=need_metals)
     if args.single_protein:
         return run_single(args, manifest, atoms, metals, elements)
-    structures = manifest[["structure_id", "group", "sequence_id"]]
+    structures = manifest[["structure_id", "group", "sequence_id"] + (["state"] if args.stratify_state else [])]
     depth = design_log.group_depth(structures, support=args.support, min_sequences=args.min_sequences)
     small = depth.loc[~depth["meets_minimum"], "group"].tolist()
     notes = [f"group {g} has fewer than {args.min_sequences} sequences and cannot make a contact conserved" for g in small]
+    if args.stratify_state:
+        notes.append("state_contacts applies the sequence vote independently within each caller-supplied state; state results are descriptive and do not test for a state effect")
 
     contacts = ci.conserved_contacts(atoms, structures, cutoff=args.cutoff, support=args.support, min_sequences=args.min_sequences,
                                      sulfur_acceptor=args.sulfur_acceptor, neighbor_contacts=args.neighbor_contacts,
                                      metals=metals if args.sulfur_acceptor else None, coverage=True)
     tables = {"conserved_contacts": contacts, "audit_backbone_only": ci.backbone_only_audit(atoms)}
+    if args.stratify_state:
+        state_structures = structures
+        tables["state_structure_votes"] = state_stratification.state_structure_votes(
+            atoms, state_structures, cutoff=args.cutoff, sulfur_acceptor=args.sulfur_acceptor,
+            metals=metals if args.sulfur_acceptor else None, neighbor_contacts=args.neighbor_contacts)
+        tables["state_contacts"] = state_stratification.state_stratified_contacts(
+            atoms, state_structures, cutoff=args.cutoff, support=args.support, min_sequences=args.min_sequences,
+            sulfur_acceptor=args.sulfur_acceptor, metals=metals if args.sulfur_acceptor else None,
+            neighbor_contacts=args.neighbor_contacts)
     directives = [design_log.contact_directives(contacts, structures, support=args.support, min_sequences=args.min_sequences)] if args.directives else []
 
     if elements:
@@ -229,7 +255,8 @@ def run(args: argparse.Namespace) -> Path:
     parameters = {"support": args.support, "min_sequences": args.min_sequences, "cutoff": args.cutoff, "metals": elements,
                   "coordination_tiers": args.coordination_tiers, "sulfur_acceptor": args.sulfur_acceptor,
                   "neighbor_contacts": args.neighbor_contacts, "metal_ligands": args.metal_ligands, "directives": args.directives,
-                  "position_map": "given" if position_map is not None else "residue numbers", "manifest": str(Path(args.manifest).name)}
+                  "position_map": "given" if position_map is not None else "residue numbers", "manifest": str(Path(args.manifest).name),
+                  "stratify_state": args.stratify_state, **({"states": single_protein.states_of(manifest)} if args.stratify_state else {})}
     pieces = [d for d in directives if len(d)]
     if args.directives and not pieces:
         notes.append("directives were requested and nothing is conserved in any group, so directives.csv is not written")

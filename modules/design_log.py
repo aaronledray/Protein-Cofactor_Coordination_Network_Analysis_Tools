@@ -78,6 +78,8 @@ KNOWN_TABLES = {
     "contact_persistence": "residue pairs in contact in at least one structure of one protein: in how many structures, and the closest distance in them (not a vote)",
     "cofactor_persistence": "residues in contact with a cofactor feature across the structures of one protein: structures per class and distances (not a vote)",
     "conserved_contacts": "residue pairs voted over sequences, with the chemistry that is conserved and the depth of the vote behind each pair",
+    "state_contacts": "residue-pair votes calculated independently within each caller-supplied state (descriptive; not a test of a state effect)",
+    "state_structure_votes": "eligible and positive structure counts behind each residue-pair vote, per state and sequence",
     "cofactor_contacts": "residues in contact with a cofactor feature, voted over sequences (coordination tiers where computed)",
     "metal_ligands": "non-protein atoms bound to metals, per structure (descriptive, not voted)",
     "water_bridges": "residues bridged to a cofactor oxygen by one modeled water, per structure",
@@ -339,6 +341,19 @@ def _summary(manifest: Dict[str, Any], tables: Mapping[str, pd.DataFrame], depth
         if "conserved_in" in contacts.columns:
             counts = contacts["conserved_in"].replace("", "(none)").value_counts()
             lines += ["", "| conserved in | pairs |", "|---|---|"] + [f"| {k} | {v} |" for k, v in counts.items()]
+        lines.append("")
+    state_contacts = tables.get("state_contacts")
+    if state_contacts is not None and len(state_contacts):
+        support = float(manifest["parameters"].get("support", 0.90))
+        minimum = int(manifest["parameters"].get("min_sequences", 5))
+        lines += ["## State-stratified contacts", "", "Each state uses the same sequence-vote rule independently. These counts are descriptive and do not test for a state effect.", "",
+                  "| State | Group | candidate pairs | below minimum coverage | passing the group rule |", "|---|---|---:|---:|---:|"]
+        for state in sorted(state_contacts["state"].astype(str).unique()):
+            subset = state_contacts[state_contacts["state"].astype(str) == state]
+            for group in sorted(manifest["dataset"]["groups"]):
+                n = subset[f"contact_n_{group}"]
+                passing = subset[f"passes_contact_{group}"]
+                lines.append(f"| {state} | {group} | {len(subset)} | {int((n < minimum).sum())} | {int(passing.sum())} |")
         lines.append("")
     ligands = tables.get("metal_ligands")
     if ligands is not None and len(ligands):
