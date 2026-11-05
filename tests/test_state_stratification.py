@@ -91,11 +91,29 @@ class StateStratificationTests(unittest.TestCase):
             for i in range(5):
                 for state in ("ox", "red"):
                     rows.append((f"s{i}_{state}", str(structure_file), f"q{i}", "all", "A", state))
-            manifest = root / "manifest.csv"
-            pd.DataFrame(rows, columns=["structure_id", "path", "sequence_id", "group", "chain", "state"]).to_csv(manifest, index=False)
-            code = conserve_cli.main(["--manifest", str(manifest), "--output-dir", str(root / "log"), "--stratify-state"])
-            self.assertEqual(code, 0)
-            log = root / "log"
+            frame = pd.DataFrame(rows, columns=["structure_id", "path", "sequence_id", "group", "chain", "state"])
+            logs = {}
+            for mode, with_state, stratify in (("no_state", False, False), ("unused_state", True, False), ("stratified", True, True)):
+                mode_dir = root / mode
+                mode_dir.mkdir()
+                manifest = mode_dir / "manifest.csv"
+                (frame if with_state else frame.drop(columns="state")).to_csv(manifest, index=False)
+                args = ["--manifest", str(manifest), "--output-dir", str(mode_dir / "log")]
+                if stratify:
+                    args.append("--stratify-state")
+                code = conserve_cli.main(args)
+                self.assertEqual(code, 0)
+                logs[mode] = mode_dir / "log"
+
+            for filename in ("conserved_contacts.csv", "audit_backbone_only.csv", "structures.csv", "manifest.json", "SUMMARY.md"):
+                self.assertEqual((logs["no_state"] / filename).read_bytes(), (logs["unused_state"] / filename).read_bytes(), filename)
+            pooled_no_state = pd.read_csv(logs["no_state"] / "conserved_contacts.csv")
+            pooled_unused_state = pd.read_csv(logs["unused_state"] / "conserved_contacts.csv")
+            pooled_stratified = pd.read_csv(logs["stratified"] / "conserved_contacts.csv")
+            pd.testing.assert_frame_equal(pooled_no_state, pooled_unused_state)
+            pd.testing.assert_frame_equal(pooled_no_state, pooled_stratified)
+
+            log = logs["stratified"]
             pooled = pd.read_csv(log / "conserved_contacts.csv")
             by_state = pd.read_csv(log / "state_contacts.csv")
             structure_votes = pd.read_csv(log / "state_structure_votes.csv")
