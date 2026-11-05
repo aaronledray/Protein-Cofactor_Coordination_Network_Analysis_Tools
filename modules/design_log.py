@@ -80,6 +80,7 @@ KNOWN_TABLES = {
     "conserved_contacts": "residue pairs voted over sequences, with the chemistry that is conserved and the depth of the vote behind each pair",
     "state_contacts": "residue-pair votes calculated independently within each caller-supplied state (descriptive; not a test of a state effect)",
     "state_structure_votes": "eligible and positive structure counts behind each residue-pair vote, per state and sequence",
+    "state_contrasts": "pairwise descriptive comparisons of contact vote status between states (not an effect or significance test)",
     "cofactor_contacts": "residues in contact with a cofactor feature, voted over sequences (coordination tiers where computed)",
     "metal_ligands": "non-protein atoms bound to metals, per structure (descriptive, not voted)",
     "water_bridges": "residues bridged to a cofactor oxygen by one modeled water, per structure",
@@ -354,6 +355,13 @@ def _summary(manifest: Dict[str, Any], tables: Mapping[str, pd.DataFrame], depth
                 n = subset[f"contact_n_{group}"]
                 passing = subset[f"passes_contact_{group}"]
                 lines.append(f"| {state} | {group} | {len(subset)} | {int((n < minimum).sum())} | {int(passing.sum())} |")
+        lines.append("")
+    state_contrasts = tables.get("state_contrasts")
+    if state_contrasts is not None and len(state_contrasts):
+        counts = state_contrasts["contrast"].value_counts().sort_index()
+        lines += ["## Pairwise state contrasts", "", "Each row compares descriptive vote statuses between two states. A status difference is not a statistical or causal state effect.", "",
+                  "| Comparison | candidate pairs |" , "|---|---:|"]
+        lines += [f"| {label} | {n} |" for label, n in counts.items()]
         lines.append("")
     ligands = tables.get("metal_ligands")
     if ligands is not None and len(ligands):

@@ -63,6 +63,17 @@ class StateStratificationTests(unittest.TestCase):
         self.assertEqual(state_ox["conserved_contact"].tolist(), direct["conserved_contact"].tolist())
         self.assertEqual(state_ox["contact_n_A"].tolist(), direct["contact_n_A"].tolist())
 
+    def test_pairwise_contrasts_keep_support_failure_separate_from_insufficient_coverage(self):
+        atoms, structures = fixture()
+        state_contacts = state_stratification.state_stratified_contacts(atoms, structures, support=0.9, min_sequences=5)
+        contrasts = state_stratification.state_contrasts(state_contacts, min_sequences=5).set_index(["state_a", "state_b"])
+        self.assertEqual(tuple(contrasts.loc[("apo", "ox"), ["status_a", "status_b", "contrast"]]),
+                         ("insufficient_coverage", "pass", "insufficient_a_pass_b"))
+        self.assertEqual(tuple(contrasts.loc[("apo", "red"), ["status_a", "status_b", "contrast"]]),
+                         ("insufficient_coverage", "support_fail", "insufficient_a_support_fail_b"))
+        self.assertEqual(tuple(contrasts.loc[("ox", "red"), ["status_a", "status_b", "contrast"]]),
+                         ("pass", "support_fail", "pass_only_a"))
+
     def test_input_contract(self):
         atoms, structures = fixture()
         with self.assertRaisesRegex(ValueError, "at least two"):
@@ -88,15 +99,20 @@ class StateStratificationTests(unittest.TestCase):
             pooled = pd.read_csv(log / "conserved_contacts.csv")
             by_state = pd.read_csv(log / "state_contacts.csv")
             structure_votes = pd.read_csv(log / "state_structure_votes.csv")
+            contrasts = pd.read_csv(log / "state_contrasts.csv")
             self.assertEqual(set(by_state["state"]), {"ox", "red"})
             self.assertEqual(len(by_state), 2 * len(pooled))
             self.assertEqual(len(structure_votes), 10 * len(pooled))
+            self.assertEqual(len(contrasts), len(pooled))
+            self.assertEqual(set(contrasts["contrast"]), {"pass_both"})
             self.assertTrue((structure_votes["eligible_structures"] == 1).all())
             self.assertTrue((structure_votes["positive_structures"] == 1).all())
             metadata = json.loads((log / "manifest.json").read_text())
             self.assertTrue(metadata["parameters"]["stratify_state"])
             self.assertIn("state_contacts", metadata["tables"])
+            self.assertIn("state_contrasts", metadata["tables"])
             self.assertIn("do not test for a state effect", (log / "SUMMARY.md").read_text())
+            self.assertIn("not a statistical or causal state effect", (log / "SUMMARY.md").read_text())
             self.assertEqual(set(pd.read_csv(log / "structures.csv")["state"]), {"ox", "red"})
 
 

@@ -11,6 +11,7 @@ Show how residue contacts vary across explicitly labelled structural states in a
 - Leave the current pooled `conserved_contacts` and all existing defaults unchanged.
 - Add a tidy `state_contacts` table to the same log, with one row per contact candidate and state. Preserve the state label, per-group positive and total sequence votes, support fractions, and whether each group passes the existing support and minimum-sequence rules.
 - Add a `state_structure_votes` table with one row per candidate pair, state, group, and sequence. Record eligible structures, positive structures, their fraction, and the resulting sequence vote; a sequence-state with no eligible structures has a missing vote rather than a negative.
+- Add a `state_contrasts` table with one row per candidate pair and unordered pair of states. Report each state's overall status (`pass`, `support_fail`, or `insufficient_coverage`) and a comparison category. This is a descriptive summary of the existing vote results.
 - Keep audit behavior unchanged. State-specific directives are out of scope for the first version; reject `--directives` with `--stratify-state` because existing directives describe only the pooled vote.
 
 ## Vote and denominators
@@ -27,6 +28,7 @@ Show how residue contacts vary across explicitly labelled structural states in a
 - Structures remain equally weighted inside each sequence-state vote. Multiple structures from the same crystal form or experimental setup can therefore dominate that within-state vote; report raw structure counts and retain the current non-independence caveat.
 - State labels and residue correspondence remain caller-supplied. `anchor_audit` and `backbone_only_audit` remain separate input-QC tools; stratification does not silently drop structures or sequences.
 - Cofactor, water-bridge, and relay state stratification is not included in the first version. The initial output covers residue-residue contacts only.
+- Pairwise comparison labels summarize vote status only; they do not estimate a state effect or its uncertainty.
 
 ## Validation
 
@@ -36,6 +38,6 @@ Show how residue contacts vary across explicitly labelled structural states in a
 - Check that state-specific support and chemistry are not pooled across states, and that insufficient coverage is explicit in both CSV and summary.
 - Keep the existing oxidase 490-contact reproduction and stable-core schemas unchanged.
 
-## Open choice for later
+## Contrast categories
 
-Whether to add a separate, explicitly descriptive state-contrast summary (for example, conserved in state A but not state B) should be decided after reviewing the state-specific coverage table. It must not be named or worded as a statistically significant or causal state effect without a separate inferential design.
+The pairwise summary distinguishes `pass_both`, `pass_only_a`, `pass_only_b`, support failure in both states, insufficient coverage in both states, and the combinations where one state passes or fails while the other has insufficient coverage. State A and B are the sorted labels in the output row. A pass requires every group to meet its support and minimum-sequence rules; insufficient coverage takes precedence over support failure when any group is below the minimum.

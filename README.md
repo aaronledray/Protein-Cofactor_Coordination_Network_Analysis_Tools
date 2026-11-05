@@ -389,7 +389,8 @@ sscna conserve --manifest structures.csv --output-dir conserved_log --stratify-s
 Every manifest row needs a state label with the same meaning across sequences and groups. State results use the same
 sequence-vote thresholds as the pooled result; they are descriptive and do not test for a state effect. Details and
 denominator rules are in [`docs/conserved_interactions.md`](docs/conserved_interactions.md#state-stratified-sequence-vote-optional). The log includes
-`state_structure_votes.csv` with the eligible and positive structure counts behind each sequence-state vote.
+`state_structure_votes.csv` with the eligible and positive structure counts behind each sequence-state vote and `state_contrasts.csv` with descriptive
+pairwise status comparisons that distinguish support failure from insufficient coverage.
 
 ## Hypothetical substrate-point seeds
 

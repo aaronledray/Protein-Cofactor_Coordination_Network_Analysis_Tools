@@ -87,7 +87,8 @@ five sequences. Changing the headline would be a change to the manuscript's rule
 non-empty `state` labels (letters, digits and underscores) with the same meaning across all sequences and groups. For each state, the command applies the existing sequence vote
 independently: within a sequence, at least half of eligible structures must show the contact; across sequences, each group still needs at least five
 voting sequences and 90% support by default. `state_structure_votes.csv` records the eligible and positive structure counts behind each sequence-state vote,
-including zero-coverage rows with a missing vote. Existing opt-in sulfur-acceptor and sequence-neighbor rules also apply when requested. A structure
+including zero-coverage rows with a missing vote. `state_contrasts.csv` compares each unordered pair of states as passing, failing support, or lacking
+coverage; these labels summarize the vote only and are not a test for a state effect. Existing opt-in sulfur-acceptor and sequence-neighbor rules also apply when requested. A structure
 missing either position is not a negative. The output includes the contact candidates seen
 in any state, so a state with no eligible sequences has zero voters and fails the minimum explicitly.
 

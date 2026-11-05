@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from itertools import combinations
 from typing import Optional
 
 import pandas as pd
@@ -199,4 +200,68 @@ def state_stratified_contacts(atoms: pd.DataFrame, structures: pd.DataFrame, *, 
     rules.append({"table": "state_contacts", "name": "contact_positive_<group>", "rule": "number of positive sequence votes in that state and group", "cutoff_A": float("nan"), "status": "default"})
     rules.append({"table": "state_contacts", "name": "passes_contact_<group>", "rule": f"at least {min_sequences} voting sequences and at least {support:.0%} positive sequence votes in that state and group", "cutoff_A": float("nan"), "status": "default"})
     result.attrs["rules"] = rules
+    return result
+
+
+def state_contrasts(state_contacts: pd.DataFrame, *, min_sequences: int = 5) -> pd.DataFrame:
+    """Summarize descriptive pairwise state-status comparisons for each candidate contact.
+
+    A state passes only when the contact passes in every group. If any group has fewer than ``min_sequences``
+    voters, its overall state status is insufficient coverage; otherwise a non-passing state is a support failure.
+    The output classifies statuses and does not estimate a state effect.
+    """
+    keys = ["position_a", "position_b"]
+    columns = [*keys, "state_a", "state_b", "status_a", "status_b", "contrast"]
+    if state_contacts.empty:
+        result = pd.DataFrame(columns=columns)
+        result.attrs["rules"] = [{"table": "state_contrasts", "name": "contrast", "rule": "descriptive comparison of state vote statuses; not an effect or significance test", "cutoff_A": float("nan"), "status": "opt-in"}]
+        return result
+
+    required = {*keys, "state", "conserved_contact"}
+    missing = required - set(state_contacts.columns)
+    if missing:
+        raise ValueError(f"state_contacts lacks {sorted(missing)}")
+    if state_contacts.duplicated([*keys, "state"]).any():
+        raise ValueError("state_contacts must contain one row per contact candidate and state")
+    vote_groups = sorted(c.removeprefix("passes_contact_") for c in state_contacts if c.startswith("passes_contact_"))
+    if not vote_groups:
+        raise ValueError("state_contacts lacks per-group passes_contact columns")
+    missing_columns = {f"contact_n_{group}" for group in vote_groups} - set(state_contacts.columns)
+    if missing_columns:
+        raise ValueError(f"state_contacts lacks {sorted(missing_columns)}")
+
+    states = sorted(state_contacts["state"].astype(str).unique())
+    status_by_pair = {}
+    for row in state_contacts.to_dict("records"):
+        key = (row["position_a"], row["position_b"], str(row["state"]))
+        insufficient = any(int(row[f"contact_n_{group}"]) < min_sequences for group in vote_groups)
+        if insufficient:
+            status = "insufficient_coverage"
+        elif bool(row["conserved_contact"]):
+            status = "pass"
+        else:
+            status = "support_fail"
+        status_by_pair[key] = status
+
+    comparisons = {
+        ("pass", "pass"): "pass_both",
+        ("pass", "support_fail"): "pass_only_a",
+        ("support_fail", "pass"): "pass_only_b",
+        ("pass", "insufficient_coverage"): "pass_a_insufficient_b",
+        ("insufficient_coverage", "pass"): "insufficient_a_pass_b",
+        ("support_fail", "support_fail"): "support_fail_both",
+        ("insufficient_coverage", "insufficient_coverage"): "insufficient_both",
+        ("support_fail", "insufficient_coverage"): "support_fail_a_insufficient_b",
+        ("insufficient_coverage", "support_fail"): "insufficient_a_support_fail_b",
+    }
+    rows = []
+    pairs = state_contacts[keys].drop_duplicates().itertuples(index=False, name=None)
+    for position_a, position_b in pairs:
+        for state_a, state_b in combinations(states, 2):
+            status_a = status_by_pair[(position_a, position_b, state_a)]
+            status_b = status_by_pair[(position_a, position_b, state_b)]
+            rows.append((position_a, position_b, state_a, state_b, status_a, status_b, comparisons[(status_a, status_b)]))
+    result = pd.DataFrame(rows, columns=columns).sort_values([*keys, "state_a", "state_b"], kind="stable").reset_index(drop=True)
+    result.attrs["rules"] = [{"table": "state_contrasts", "name": "status_a/status_b", "rule": f"pass requires every group to meet the existing vote; insufficient coverage means any group has fewer than {min_sequences} voters; otherwise a non-pass is a support failure", "cutoff_A": float("nan"), "status": "default"},
+                              {"table": "state_contrasts", "name": "contrast", "rule": "descriptive comparison of state vote statuses; not an effect or significance test", "cutoff_A": float("nan"), "status": "opt-in"}]
     return result

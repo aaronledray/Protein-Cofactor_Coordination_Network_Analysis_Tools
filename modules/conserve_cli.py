@@ -227,6 +227,8 @@ def run(args: argparse.Namespace) -> Path:
             atoms, state_structures, cutoff=args.cutoff, support=args.support, min_sequences=args.min_sequences,
             sulfur_acceptor=args.sulfur_acceptor, metals=metals if args.sulfur_acceptor else None,
             neighbor_contacts=args.neighbor_contacts)
+        tables["state_contrasts"] = state_stratification.state_contrasts(
+            tables["state_contacts"], min_sequences=args.min_sequences)
     directives = [design_log.contact_directives(contacts, structures, support=args.support, min_sequences=args.min_sequences)] if args.directives else []
 
     if elements:
