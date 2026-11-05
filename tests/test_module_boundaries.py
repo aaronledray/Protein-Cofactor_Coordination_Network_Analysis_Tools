@@ -57,7 +57,7 @@ class ModuleBoundaryTests(unittest.TestCase):
     def test_every_module_is_classified(self):
         on_disk = {p.stem for p in MODULES.glob("*.py")} - {"__init__"}
         classified = STABLE_CORE | EXPERIMENTAL
-        legacy_support = {"atom_utils", "constants", "deduplicate_chains", "reporting",
+        legacy_support = {"atom_utils", "constants", "deduplicate_chains",
                           "residue_matching", "structure_io"}
         self.assertEqual(on_disk - classified - legacy_support, set(),
                          "new module: add it to a tier here and in docs/stability.md")
